@@ -12,7 +12,7 @@ new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, Venus OS **Large v3.80~42**,
 updating from v3.80~39 through the GUI button. The mechanism has been in use
-since March 2026 across roughly a dozen firmware updates.
+since spring 2026 across multiple firmware updates.
 
 ## Why updates break
 
@@ -70,7 +70,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/post-swupdate-patches.sh` | Patches the new slot, then switches the boot over |
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 13 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 14 failure modes, each one learned the hard way |
 
 ## Requirements
 
