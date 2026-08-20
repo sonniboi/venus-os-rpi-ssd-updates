@@ -1,0 +1,102 @@
+#!/bin/sh
+# /data/rcS.local -- runs early on EVERY boot, from both root slots.
+#
+# This is the piece that makes the whole thing survive firmware updates.
+# Everything under /data is persistent; everything under / belongs to the root
+# slot and is replaced wholesale by an update. So anything you need in the new
+# slot has to be re-established from here, on every boot.
+#
+# Venus OS runs this file via the image package custom-rc.d-early
+# (/etc/init.d/custom-rc-early.sh -> /etc/rcS.d/S99custom-rc-early.sh).
+# Verify with:  opkg list-installed | grep custom-rc
+#
+# This example contains ONLY the parts relevant to SSD boot and updates.
+# Strip or extend it for your own system.
+
+# --- log the whole boot ----------------------------------------------------
+# Without this, stderr goes to the console, which on a headless Pi means it is
+# lost. We had a broken line in here fail silently on every boot for months.
+RCS_LOG=/data/log/rcS.local.log
+if mkdir -p "$(dirname "$RCS_LOG")" 2>/dev/null; then
+    exec >> "$RCS_LOG" 2>&1
+fi
+echo "=== $(date -u) rcS.local start (slot $(grep -o 'root=/dev/sda[23]' /proc/cmdline)) ==="
+
+# --- 1. mmcblk0 -> sda symlinks -------------------------------------------
+# swupdate writes to a hardcoded /dev/mmcblk0pX. These symlinks redirect that
+# to the SSD. The guard [ ! -e /dev/mmcblk0 ] means: only when there is no
+# REAL SD card -- with a card inserted we must not shadow it.
+if [ -b /dev/sda ] && [ ! -e /dev/mmcblk0 ]; then
+    ln -sf /dev/sda  /dev/mmcblk0
+    ln -sf /dev/sda1 /dev/mmcblk0p1
+    ln -sf /dev/sda2 /dev/mmcblk0p2
+    ln -sf /dev/sda3 /dev/mmcblk0p3
+    ln -sf /dev/sda4 /dev/mmcblk0p4
+fi
+
+# --- 2. restore persistent udev rules -------------------------------------
+# /etc lives on the root slot, so custom udev rules are gone after an update.
+# Keep the masters in /data/conf/ and copy them back on every boot.
+# (This is also why editing rules directly in /etc/udev/rules.d/ does not
+# stick: the next boot overwrites them from /data/conf/.)
+for rule in /data/conf/*.rules; do
+    [ -f "$rule" ] || continue
+    dest="/etc/udev/rules.d/$(basename "$rule")"
+    if ! cmp -s "$rule" "$dest" 2>/dev/null; then
+        cp "$rule" "$dest"
+        echo "udev rule installed: $(basename "$rule")"
+    fi
+done
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=tty
+
+# --- 3. run the slot patcher after swupdate -------------------------------
+# The wrapper sets this marker before the update. After swupdate the Pi reboots
+# into the OLD slot (skip-slot-switch), lands here, and the patcher prepares
+# the new slot and reboots into it.
+# The 15 s delay gives the system time to auto-mount the inactive slot.
+if [ -f /data/.pending-slot-patch ]; then
+  (sleep 15 && sh /data/etc/post-swupdate-patches.sh >/dev/null 2>>/var/log/post-swupdate-patches.log) &
+fi
+
+# --- 4. slot drift detection ----------------------------------------------
+# A GUI update does not necessarily leave a marker behind. If the active slot
+# differs from the one we booted last time, an update clearly happened --
+# trigger the post-upgrade work retroactively.
+ACTIVE_SLOT=$(grep -o 'root=/dev/sda[23]' /proc/cmdline | grep -o 'sda[23]')
+LAST_SLOT_FILE=/data/conf/last-active-slot
+LAST_SLOT=$(cat "$LAST_SLOT_FILE" 2>/dev/null || true)
+if [ -n "$ACTIVE_SLOT" ] && [ -n "$LAST_SLOT" ] && [ "$ACTIVE_SLOT" != "$LAST_SLOT" ]; then
+  echo "$(date): slot drift detected: $LAST_SLOT -> $ACTIVE_SLOT (GUI update?), marker set"
+  touch /data/.post-upgrade-pending
+fi
+[ -n "$ACTIVE_SLOT" ] && echo "$ACTIVE_SLOT" > "$LAST_SLOT_FILE"
+
+# --- 5. post-upgrade work in the NEW slot ---------------------------------
+# Re-register your own services, re-trigger udev, restore whatever the update
+# removed. Delay so runit is up. Your script should remove the marker when done.
+if [ -f /data/.post-upgrade-pending ]; then
+  (sleep 30 && sh /data/etc/post-upgrade-autofix.sh) &
+fi
+
+# --- 6. (re)install the update wrapper ------------------------------------
+# A firmware update ships a fresh original check-updates.sh, so the wrapper has
+# to be reinstalled on every boot. Keeping .orig intact is what makes this
+# idempotent: we only take a new backup when the installed file is not already
+# our wrapper.
+_CU=/opt/victronenergy/swupdate-scripts/check-updates.sh
+_CU_ORIG="${_CU}.orig"
+_CU_WRAP=/data/etc/check-updates-wrapper.sh
+if [ -f "$_CU_WRAP" ] && [ -x "$_CU_WRAP" ]; then
+  if ! grep -q "check-updates-wrapper" "$_CU" 2>/dev/null; then
+    cp "$_CU" "$_CU_ORIG"
+  fi
+  cp "$_CU_WRAP" "$_CU"
+  chmod +x "$_CU"
+fi
+unset _CU _CU_ORIG _CU_WRAP
+
+# --- 7. restore your crontab (optional) -----------------------------------
+[ -f /data/etc/user-crontab ] && crontab /data/etc/user-crontab 2>/dev/null
+
+echo "=== $(date -u) rcS.local done ==="
