@@ -132,25 +132,49 @@ io.open(path, 'w', encoding='utf-8').write(new)
 
 Then verify with `sh -n` and compare the line count.
 
-## 10. Do not use sed on fw_env.config
+## 10. Two writers on one log file interleave
+
+If your script logs with `tee -a "$LOGF"` **and** the caller redirects its
+output into the same file, every line is written twice by two independent
+append descriptors. They interleave character by character:
+
+```
+[[1177::1100::3355]]  SS0022zzzzzz--ffsscckk--ddaattaa  iinnssttaalllliieerrtt
+```
+
+Pick one writer. Here `tee` does the logging, so the caller sends stdout to
+`/dev/null` and only redirects stderr (to keep Python tracebacks):
+
+```sh
+(sleep 15 && sh /data/etc/post-swupdate-patches.sh >/dev/null 2>>/var/log/post-swupdate-patches.log) &
+```
+
+Same trap inside the script: a `die()` that pipes through `tee` and *also*
+appends `>&2` sends the line back into the very same file. The error message is
+then the one line you cannot read — exactly when you need it.
+
+This only shows up when the script runs from the boot hook, never when you call
+it by hand, so test it the way it actually runs.
+
+## 11. Do not use sed on fw_env.config
 
 We have seen this file end up containing fstab content after a partial
 in-place edit. `fw_printenv` then returns garbage, and a slot decision based on
 garbage is an endless reboot cycle. Write the file out in full instead.
 
-## 11. Mount the inactive slot where Venus expects it
+## 12. Mount the inactive slot where Venus expects it
 
 Venus OS auto-mounts the inactive slot at `/run/media/sdaX`. Do not invent
 `/mnt/newslot` — check with `cat /proc/mounts | grep sda` and use the path that
 is actually in use, otherwise you patch one copy and boot another.
 
-## 12. `poweroff` needs a real power cycle
+## 13. `poweroff` needs a real power cycle
 
 After `poweroff` the Pi does not come back on its own. If you drive the power
 through a smart switch, "turn on" is a no-op when it is already on — you need
 off, wait, on.
 
-## 13. Overlay QML files break across versions
+## 14. Overlay QML files break across versions
 
 If you use SetupHelper/PackageManager overlays, a modified QML file can
 reference a type that no longer exists after an update. Symptom: the GUI does

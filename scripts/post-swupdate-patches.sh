@@ -54,7 +54,11 @@ done
 
 LOGF=/var/log/post-swupdate-patches.log
 log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$1" | tee -a "$LOGF"; }
-die() { printf '[ERROR] %s\n' "$1" | tee -a "$LOGF" >&2; exit 1; }
+# NOTE: no >&2 here. tee already writes to the log file; sending the same line
+# to stderr as well means it arrives a second time via the caller's stderr
+# redirect -- two append descriptors on one file interleave character by
+# character, and it is the error line that becomes unreadable.
+die() { printf '[ERROR] %s\n' "$1" | tee -a "$LOGF"; exit 1; }
 
 log "=== post-swupdate-patches started (dry=$DRY no-reboot=$NOREBOOT target=${FORCE_TARGET:-auto}) ==="
 
