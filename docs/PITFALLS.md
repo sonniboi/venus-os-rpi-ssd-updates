@@ -184,3 +184,64 @@ not start, `/data/log/gui/current` shows `... is not a type` or
 Fix the file in `/data/apps/overlay-fs/data/gui/upper/qml/` with Python in-place
 (not `sed -i`, which creates a new inode and leaves a stale overlay handle),
 then reboot.
+
+## 15. serial-starter re-enables devices you had disabled
+
+If you keep a device off the D-Bus with a udev rule (`ENV{VE_SERVICE}="ignore"`)
+and that rule lives in `/data/conf/`, it comes back after an update.
+
+`serial-starter` runs **before** `rcS.local` has copied your rules from `/data`
+into `/etc/udev/rules.d/`. It therefore reads the stock rules of the freshly
+written slot, which know nothing about your exclusions:
+
+```
+18:30:25 INFO: Start service vedirect-interface.ttyUSB1 once
+18:30:29 INFO: Start service vedirect-interface.ttyUSB4 once
+```
+
+**A `down` file does not protect you** — `svc once` starts the service anyway.
+`svstat` then reports the contradictory-looking `up ... , normally down`.
+
+This is not cosmetic. A battery monitor that reappears on the D-Bus also
+rejoins the VE.Smart network, and it can push a charge voltage to your solar
+chargers: here `/Link/ChargeVoltage` jumped to 56.70 V on both MPPTs while the
+absorption voltage configured in the devices was 56.50 V. On a battery whose
+BMS cuts off at 3.65 V per cell, 0.2 V at the top of the bank is the difference
+between a full charge and a protection event.
+
+Two things to add:
+
+1. A boot-time enforcer that runs *after* the udev rules are in place and shuts
+   down any service on a port that carries `VE_SERVICE=ignore`:
+
+   ```sh
+   for dev in /dev/ttyUSB*; do
+       [ -e "$dev" ] || continue
+       tty=$(basename "$dev")
+       VE=$(udevadm info -q property -n "$dev" | sed -n 's/^VE_SERVICE=//p')
+       [ "$VE" = "ignore" ] || continue
+       for svc in vedirect-interface gps-dbus; do
+           d="/service/$svc.$tty"
+           [ -d "$d" ] || continue
+           svstat "$d" | grep -q ': up' && svc -d "$d"
+       done
+   done
+   ```
+
+   Hook it into `/data/rc.local` with a delay (180 s here) so udev and
+   serial-starter are done.
+
+2. A **negative** check in your post-update verification. Ours passed with a
+   clean bill of health while the disabled device was back on the bus, because
+   it only ever asked whether the expected devices were *present* — never
+   whether an unwanted one was *absent*. Assert both.
+
+## 16. `svc -t` will not restart a service that has a `down` file
+
+`svc -t` sends TERM and lets runit restart the process — unless a `down` file
+exists in the service directory, in which case it simply stays down. Use
+`svc -u` to bring it back up.
+
+Worth knowing before you "just restart" a VE.Direct interface to clear a stale
+value: here both solar chargers vanished from the D-Bus for 25 seconds because
+`svc -t` stopped them and nothing brought them back.

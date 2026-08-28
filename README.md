@@ -10,9 +10,11 @@ update button works** — Settings → Firmware → Online updates — and so do
 nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
-Verified on a Raspberry Pi 4 with a USB SSD, Venus OS **Large v3.80~42**,
-updating from v3.80~39 through the GUI button. The mechanism has been in use
-since spring 2026 across multiple firmware updates.
+Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
+**Large v3.80~44**, updated from v3.80~42 through the GUI button: setup at
+20:27, reboot at 20:28, new version running at 20:30, done at 20:31 — about two
+minutes of downtime, fully unattended. The mechanism has been in use since
+spring 2026 across multiple firmware updates.
 
 ## Why updates break
 
@@ -70,7 +72,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/post-swupdate-patches.sh` | Patches the new slot, then switches the boot over |
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 14 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 16 failure modes, each one learned the hard way |
 
 ## Requirements
 
