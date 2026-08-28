@@ -211,25 +211,10 @@ between a full charge and a protection event.
 
 Two things to add:
 
-1. A boot-time enforcer that runs *after* the udev rules are in place and shuts
-   down any service on a port that carries `VE_SERVICE=ignore`:
-
-   ```sh
-   for dev in /dev/ttyUSB*; do
-       [ -e "$dev" ] || continue
-       tty=$(basename "$dev")
-       VE=$(udevadm info -q property -n "$dev" | sed -n 's/^VE_SERVICE=//p')
-       [ "$VE" = "ignore" ] || continue
-       for svc in vedirect-interface gps-dbus; do
-           d="/service/$svc.$tty"
-           [ -d "$d" ] || continue
-           svstat "$d" | grep -q ': up' && svc -d "$d"
-       done
-   done
-   ```
-
-   Hook it into `/data/rc.local` with a delay (180 s here) so udev and
-   serial-starter are done.
+1. `scripts/vedirect-ignore-enforce.sh` — a boot-time enforcer that runs *after*
+   the udev rules are in place and shuts down any service on a port carrying
+   `VE_SERVICE=ignore`. Hook it into `/data/rcS.local` with a delay; see block
+   2b in `rcS.local.example`.
 
 2. A **negative** check in your post-update verification. Ours passed with a
    clean bill of health while the disabled device was back on the bus, because

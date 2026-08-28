@@ -50,6 +50,17 @@ done
 udevadm control --reload-rules
 udevadm trigger --subsystem-match=tty
 
+# --- 2b. enforce VE_SERVICE=ignore ----------------------------------------
+# The rules above arrive too late for serial-starter: on the first boot into a
+# freshly written slot it has already read the stock rules and started services
+# on ports you meant to exclude ("Start service vedirect-interface.ttyUSBx
+# once"). A `down` file does not stop that -- `svc once` bypasses it.
+# The delay lets udev and serial-starter settle first. No-op on a healthy boot.
+# Skip this block if you do not exclude any serial device. See PITFALLS.md #15.
+if [ -x /data/etc/vedirect-ignore-enforce.sh ]; then
+  (sleep 180 && /data/etc/vedirect-ignore-enforce.sh) &
+fi
+
 # --- 3. run the slot patcher after swupdate -------------------------------
 # The wrapper sets this marker before the update. After swupdate the Pi reboots
 # into the OLD slot (skip-slot-switch), lands here, and the patcher prepares
