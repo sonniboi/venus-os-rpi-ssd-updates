@@ -71,6 +71,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/check-updates-wrapper.sh` | Makes GUI/auto updates target the SSD. Installed as `check-updates.sh` |
 | `scripts/post-swupdate-patches.sh` | Patches the new slot, then switches the boot over |
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
+| `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
 | `docs/PITFALLS.md` | **Read this.** 16 failure modes, each one learned the hard way |
 
@@ -91,6 +92,8 @@ mkdir -p /data/etc
 cp scripts/check-updates-wrapper.sh  /data/etc/
 cp scripts/post-swupdate-patches.sh  /data/etc/
 cp scripts/fsck-data-init.sh         /data/etc/
+# only if you exclude serial devices with ENV{VE_SERVICE}="ignore":
+cp scripts/vedirect-ignore-enforce.sh /data/etc/
 chmod +x /data/etc/*.sh
 
 # 2. Merge the relevant blocks from scripts/rcS.local.example
