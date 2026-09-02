@@ -153,6 +153,31 @@ fi
 # Venus OS auto-mounts the inactive slot here. Do NOT invent your own path.
 NEWSLOT=/run/media/$TARGET
 
+# A partially written image ("clean with errors") means swupdate was interrupted.
+# Do NOT fsck it -- see README, that destroys the slot. Write the image again
+# instead; swupdate overwrites the partition completely.
+#
+# This runs as a function because the corruption can surface in TWO ways, and an
+# earlier version of this script only handled the first one:
+#   a) mount fails outright                       -> caught below
+#   b) the slot mounts fine but every path in it returns EBADMSG ("Bad message")
+# Case (b) is the common one: Venus auto-mounts the inactive slot, so by the time
+# this script runs the corrupt slot is usually ALREADY mounted read-write and the
+# mount-failure branch is never reached. Observed 2026-09-02 on a slot left behind
+# by an interrupted swupdate.
+retry_update_or_die() {
+  RETRY_FLAG=/data/.post-swupdate-retry
+  if [ -f "$RETRY_FLAG" ]; then
+    rm -f "$RETRY_FLAG"
+    die "/dev/$TARGET still corrupt after auto-retry -- manual inspection needed"
+  fi
+  log "auto-retry: re-running the update to rewrite /dev/$TARGET"
+  touch "$RETRY_FLAG"
+  nohup /opt/victronenergy/swupdate-scripts/check-updates.sh -update > /tmp/swupdate-retry.log 2>&1 &
+  log "update restarted (PID $!) -- Pi reboots after swupdate, then this script runs again"
+  exit 0
+}
+
 if ! mountpoint -q "$NEWSLOT" 2>/dev/null; then
   log "mounting /dev/$TARGET -> $NEWSLOT"
   [ "$DRY" = "0" ] && {
@@ -162,21 +187,7 @@ if ! mountpoint -q "$NEWSLOT" 2>/dev/null; then
       log "mount error: $MOUNT_ERR"
       FS_STATE=$(dumpe2fs -h /dev/$TARGET 2>/dev/null | grep "Filesystem state:" | sed "s/.*state: *//")
       log "filesystem state: ${FS_STATE:-unknown}"
-      if echo "$FS_STATE" | grep -q "errors"; then
-        # A partially written image ("clean with errors") means swupdate was
-        # interrupted. Do NOT fsck it -- see README, that destroys the slot.
-        # Just write the image again; swupdate overwrites completely.
-        RETRY_FLAG=/data/.post-swupdate-retry
-        if [ -f "$RETRY_FLAG" ]; then
-          rm -f "$RETRY_FLAG"
-          die "/dev/$TARGET still corrupt after auto-retry -- manual inspection needed"
-        fi
-        log "filesystem errors detected -- auto-retry: re-running the update"
-        touch "$RETRY_FLAG"
-        nohup /opt/victronenergy/swupdate-scripts/check-updates.sh -update > /tmp/swupdate-retry.log 2>&1 &
-        log "update restarted (PID $!) -- Pi reboots after swupdate, then this script runs again"
-        exit 0
-      fi
+      echo "$FS_STATE" | grep -q "errors" && retry_update_or_die
       die "mount failed: $MOUNT_ERR"
     fi
   }
@@ -184,7 +195,19 @@ else
   log "$NEWSLOT already auto-mounted"
 fi
 
-[ -f "$NEWSLOT/opt/victronenergy/version" ] || die "$NEWSLOT does not look like a Venus slot"
+# Readability check -- this is where case (b) is caught. On a half-written slot
+# the test below is false because the path lookup itself fails with EBADMSG, so
+# do not treat it as "not a Venus slot" before asking the filesystem how it is.
+if [ ! -f "$NEWSLOT/opt/victronenergy/version" ]; then
+  FS_STATE=$(dumpe2fs -h /dev/$TARGET 2>/dev/null | grep "Filesystem state:" | sed "s/.*state: *//")
+  log "$NEWSLOT/opt/victronenergy/version unreadable -- filesystem state: ${FS_STATE:-unknown}"
+  if [ "$DRY" = "1" ]; then
+    log "DRY-RUN: would auto-retry the update (slot unreadable)"
+    exit 0
+  fi
+  echo "$FS_STATE" | grep -q "errors" && retry_update_or_die
+  die "$NEWSLOT does not look like a Venus slot (filesystem reports: ${FS_STATE:-unknown})"
+fi
 rm -f /data/.post-swupdate-retry 2>/dev/null || true
 log "target version: $(head -n 1 $NEWSLOT/opt/victronenergy/version) ($(cat $NEWSLOT/etc/venus/image-type 2>/dev/null))"
 
