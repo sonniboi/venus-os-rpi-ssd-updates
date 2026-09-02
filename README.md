@@ -11,10 +11,12 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80~44**, updated from v3.80~42 through the GUI button: setup at
-20:27, reboot at 20:28, new version running at 20:30, done at 20:31 — about two
-minutes of downtime, fully unattended. The mechanism has been in use since
-spring 2026 across multiple firmware updates.
+**Large v3.80~45**, updated from v3.80~44 by writing the GUI's own D-Bus path
+(`/Firmware/Online/Install`, see pitfall 18): swupdate started at 06:14:33 and
+reported success at 06:15:28, the slot patcher ran at 06:16:15, and the new
+version was up with all services back a few minutes later — fully unattended,
+`update-postcheck` green. The mechanism has been in use since spring 2026 across
+multiple firmware updates.
 
 ## Why updates break
 
@@ -73,7 +75,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 16 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 18 failure modes, each one learned the hard way |
 
 ## Requirements
 

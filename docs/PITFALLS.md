@@ -230,3 +230,79 @@ exists in the service directory, in which case it simply stays down. Use
 Worth knowing before you "just restart" a VE.Direct interface to clear a stale
 value: here both solar chargers vanished from the D-Bus for 25 seconds because
 `svc -t` stopped them and nothing brought them back.
+
+## 17. An interrupted swupdate leaves a slot that mounts but cannot be read
+
+Kill an update part-way through — an SSH session that times out is enough — and
+the target partition is left holding a partial image. The give-away is not a
+mount failure. Venus auto-mounts the inactive slot, so the corrupt slot usually
+sits there mounted read-write, and every path inside it returns `EBADMSG`:
+
+```
+# ls /run/media/sda2/
+ls: /run/media/sda2/etc: Bad message
+ls: /run/media/sda2/usr: Bad message
+# dumpe2fs -h /dev/sda2 | grep state
+Filesystem state:         clean with errors
+```
+
+`dumpe2fs` is the reliable test. Do **not** use the D-Bus path
+`com.victronenergy.platform /Firmware/Backup/AvailableVersion` for this — it
+reports an empty value for a perfectly healthy rollback slot as well, so an
+empty value proves nothing. (Measured on a slot that was `clean` and held a
+readable image.)
+
+Two consequences worth knowing:
+
+**The patcher fails safe, but it does not repair itself.** `post-swupdate-patches.sh`
+dies on the `[ -f "$NEWSLOT/opt/victronenergy/version" ]` check, which is false
+because the lookup itself fails. That happens *before* any patching and *before*
+the boot switch, so the boot target stays on the healthy slot — the Pi does not
+end up half-booted. But `.pending-slot-patch` survives, so every subsequent boot
+retries and dies the same way.
+
+**The auto-retry used to be unreachable in exactly this case.** It lived in the
+branch that runs when `mount` fails — and the mount had already succeeded. Fixed
+by checking the filesystem state at the readability check as well, so a
+`clean with errors` slot triggers the retry no matter how it got mounted.
+
+To clear the state by hand, first confirm `fw_printenv version` still matches the
+running slot (1 = sda2, 2 = sda3), then:
+
+```sh
+rm -f /data/skip-slot-switch /data/.pending-slot-patch /data/.post-upgrade-pending
+umount -l /run/media/sda2      # plain umount says "target is busy"
+```
+
+Then start the update again. Never `fsck` the slot — the next full swupdate
+overwrites it anyway, and see pitfall 1 for what fsck does to it.
+
+## 18. Do not start an update from an SSH session
+
+`swupdate` downloads a few hundred megabytes and then writes them. If it is a
+child of your SSH session, the session dying takes the update with it and you
+land in pitfall 17. A shell timeout, a closed laptop or a dropped VPN all count.
+
+The robust way is to let `venus-platform` own the process, which is what the GUI
+button does. It is reachable over D-Bus:
+
+```sh
+# what the "Press to update" button in Settings -> Firmware -> Online updates does
+dbus -y com.victronenergy.platform /Firmware/Online/Install SetValue 1
+```
+
+The resulting `check-updates.sh` has `venus-platform` as its parent, so closing
+the SSH connection cannot touch it. Useful companions:
+
+| Path on `com.victronenergy.platform` | Meaning |
+|---|---|
+| `/Firmware/Online/Check` | check for updates, read-only |
+| `/Firmware/Online/AvailableVersion` | version offered by the selected feed |
+| `/Firmware/Installed/Version` / `/Build` / `/ImageType` | what is running |
+| `/Firmware/State`, `/Firmware/Progress` | state and progress |
+
+The feed itself is `com.victronenergy.settings /Settings/System/ReleaseType`
+(0 = release, 1 = candidate, 2 = testing, 3 = develop).
+
+If you do drive an update from a script over SSH instead, wrap it in `nohup` and
+detach — and never put a client-side `timeout` around the call.
