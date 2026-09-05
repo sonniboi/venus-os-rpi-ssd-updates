@@ -11,12 +11,19 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80~45**, updated from v3.80~44 by writing the GUI's own D-Bus path
-(`/Firmware/Online/Install`, see pitfall 18): swupdate started at 06:14:33 and
-reported success at 06:15:28, the slot patcher ran at 06:16:15, and the new
-version was up with all services back a few minutes later — fully unattended,
-`update-postcheck` green. The mechanism has been in use since spring 2026 across
-multiple firmware updates.
+**Large v3.80~46**, updated from v3.80~45 on 2026-09-05 — the second consecutive
+release taken by pressing the button in the GUI, with the SD card left out and
+the running system on `/dev/sda3`.
+
+The run before that (v3.80~44 → v3.80~45) was driven by writing the GUI's own
+D-Bus path directly (`/Firmware/Online/Install`, see pitfall 18): swupdate
+started at 06:14:33 and reported success at 06:15:28, the slot patcher ran at
+06:16:15, and the new version came up with all services back a few minutes
+later — fully unattended, `update-postcheck` green.
+
+The mechanism has been in use since spring 2026 across multiple firmware
+updates. Note that image updates replace `/opt/victronenergy`, so any local
+patch there has to be reapplied on every update — see pitfall 19.
 
 ## Why updates break
 
