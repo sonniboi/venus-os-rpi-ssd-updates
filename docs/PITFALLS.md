@@ -306,3 +306,39 @@ The feed itself is `com.victronenergy.settings /Settings/System/ReleaseType`
 
 If you do drive an update from a script over SSH instead, wrap it in `nohup` and
 detach — and never put a client-side `timeout` around the call.
+
+## 19. An image update silently reverts every patch under `/opt`
+
+A firmware update does not merge — it writes a **whole rootfs** into the
+inactive slot. Everything you changed under `/opt/victronenergy` is simply not
+there afterwards: overlay files, a patched `systemcalc`, a modified driver.
+Nothing warns you. The system comes up healthy, and only the behaviour you had
+patched in is quietly gone.
+
+This bites hardest when the patch fixed a *display* value rather than a
+function. In our case a `systemcalc` patch stops the AC-loads figure from being
+clamped; after an update the tile is back to the stock behaviour, which looks
+plausible enough that you can miss it for days.
+
+The fix is to treat `/data` as the only durable place and reapply on every
+boot. `/data/rc.local` survives updates, so the patch is applied from there:
+
+```sh
+# /data/rc.local — reapply after every image update
+grep -q 'MY-PATCH-MARKER' /opt/victronenergy/dbus-systemcalc-py/delegates/foo.py \
+    || patch -p0 -d / < /data/conf/foo.patch
+```
+
+Two rules make this survivable:
+
+1. **Mark your patch** with a unique string, so a boot script can ask "is it
+   already applied?" without parsing code.
+2. **Verify the count after every update**, not just that the file exists:
+
+```sh
+grep -rc 'MY-PATCH-MARKER' /opt/victronenergy/dbus-systemcalc-py/   # expected: 2
+```
+
+The same applies to udev rules. A rule you drop in `/etc/udev/rules.d` is gone
+after the next update — put it in `/data/conf/` and have `rc.local` install it,
+or it will come back to bite you as a device that reappears after months.
