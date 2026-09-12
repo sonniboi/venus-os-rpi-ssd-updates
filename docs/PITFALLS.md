@@ -266,6 +266,27 @@ branch that runs when `mount` fails — and the mount had already succeeded. Fix
 by checking the filesystem state at the readability check as well, so a
 `clean with errors` slot triggers the retry no matter how it got mounted.
 
+**Field-confirmed on 2026-09-12 (v3.80~49 → v3.80~50).** The first swupdate pass
+left the target slot with `Filesystem state: clean with errors`; this time the
+mount itself failed (`Structure needs cleaning`), so the original retry branch
+fired. The log tells the whole story in six lines:
+
+```
+[12:20:37] Mount-Fehler: mount(2) system call failed: Structure needs cleaning.
+[12:20:37] Filesystem state: clean with errors
+[12:20:37] Auto-Retry: check-updates.sh -update (rewrites /dev/sda3)
+[12:22:38] Target-Version: v3.80~50 (large)
+[12:22:39] === Alle Patches OK ===
+[12:22:39] Reboot in 3 s in sda3 ...
+```
+
+The post-update check came back green three minutes later. Nobody touched the
+Pi. What corrupted the first pass is not known — the update had been started
+from the GUI, not from SSH, and the reboot that followed came only 80 s after
+swupdate began, which is shorter than a full write of the large image to this
+SSD. Treat a mount failure and an `EBADMSG` mount as the same condition; the
+patcher now does.
+
 To clear the state by hand, first confirm `fw_printenv version` still matches the
 running slot (1 = sda2, 2 = sda3), then:
 

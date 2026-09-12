@@ -11,9 +11,13 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80~46**, updated from v3.80~45 on 2026-09-05 — the second consecutive
-release taken by pressing the button in the GUI, with the SD card left out and
-the running system on `/dev/sda3`.
+**Large v3.80~50**, updated from v3.80~49 on 2026-09-12 with the SD card left
+out. That run is the first one in which the auto-retry earned its keep: the
+first swupdate pass left the target slot `clean with errors`, the slot patcher
+refused to touch it, re-ran the update on its own, patched the freshly written
+slot two minutes later and booted into it — see pitfall 17. Before that,
+v3.80~49 arrived through the nightly cron on 2026-09-10 and v3.80~46 through
+the GUI button on 2026-09-05, both without intervention.
 
 The run before that (v3.80~44 → v3.80~45) was driven by writing the GUI's own
 D-Bus path directly (`/Firmware/Online/Install`, see pitfall 18): swupdate
