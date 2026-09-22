@@ -208,6 +208,16 @@ if [ ! -f "$NEWSLOT/opt/victronenergy/version" ]; then
   echo "$FS_STATE" | grep -q "errors" && retry_update_or_die
   die "$NEWSLOT does not look like a Venus slot (filesystem reports: ${FS_STATE:-unknown})"
 fi
+# Readable, but flagged: "clean with errors" on a slot whose files are fine.
+# That flag is what the old read-write auto-mount leaves behind (pitfall 20).
+# On v3.80 all 53 836 files matched the official image byte for byte, so this
+# is NOT a reason to retry -- and never a reason to fsck (pitfall 1). Just
+# make it visible.
+TGT_STATE=$(dumpe2fs -h /dev/$TARGET 2>/dev/null | grep "Filesystem state:" | sed "s/.*state: *//")
+case "$TGT_STATE" in
+  *error*) log "WARN: /dev/$TARGET is readable but its filesystem state is: $TGT_STATE (flag only, no retry)" ;;
+  *)       log "filesystem state /dev/$TARGET: ${TGT_STATE:-unknown}" ;;
+esac
 rm -f /data/.post-swupdate-retry 2>/dev/null || true
 log "target version: $(head -n 1 $NEWSLOT/opt/victronenergy/version) ($(cat $NEWSLOT/etc/venus/image-type 2>/dev/null))"
 
