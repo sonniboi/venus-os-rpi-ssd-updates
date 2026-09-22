@@ -11,13 +11,21 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80~50**, updated from v3.80~49 on 2026-09-12 with the SD card left
-out. That run is the first one in which the auto-retry earned its keep: the
-first swupdate pass left the target slot `clean with errors`, the slot patcher
-refused to touch it, re-ran the update on its own, patched the freshly written
-slot two minutes later and booted into it — see pitfall 17. Before that,
-v3.80~49 arrived through the nightly cron on 2026-09-10 and v3.80~46 through
-the GUI button on 2026-09-05, both without intervention.
+**Large v3.80** (the final release, build 2026-09-21), updated from v3.80~53
+through the GUI button on 2026-09-22 with the SD card left out: swupdate took
+about a minute, the slot patcher ran 50 seconds after the first reboot, and
+`update-postcheck` came back green. That update also exposed a new problem: the
+freshly written slot came up `clean with errors` although the image was clean,
+because the inactive slot is still mounted while swupdate overwrites it. The
+files were intact; the wrapper now unmounts the target slot first — see
+pitfall 20.
+
+v3.80~50 (2026-09-12) was the first run in which the auto-retry earned its
+keep: the first swupdate pass left the target slot unreadable, the slot patcher
+refused to touch it, re-ran the update on its own and booted into the freshly
+written slot two minutes later — see pitfall 17. v3.80~49 arrived through the
+nightly cron on 2026-09-10 and v3.80~46 through the GUI button on 2026-09-05,
+both without intervention.
 
 The run before that (v3.80~44 → v3.80~45) was driven by writing the GUI's own
 D-Bus path directly (`/Firmware/Online/Install`, see pitfall 18): swupdate
@@ -53,6 +61,7 @@ GUI "Install update"
         ├── creates /dev/mmcblk0* -> /dev/sda* symlinks
         ├── sets skip-slot-switch + .pending-slot-patch
         ├── snapshots settings.xml
+        ├── stops vrmlogger, unmounts the target slot (ro first)
         └─> check-updates.sh.orig -update  (stock Victron script, untouched)
               └─> swupdate writes the image to the inactive slot
                     └─> reboot into the OLD slot (skip flag)
@@ -86,7 +95,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 18 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 20 failure modes, each one learned the hard way |
 
 ## Requirements
 

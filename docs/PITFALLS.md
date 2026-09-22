@@ -18,6 +18,9 @@ slot partition at all.
 If a slot really is damaged (`dumpe2fs -h` shows `clean with errors`, usually
 because swupdate was interrupted), the fix is to **write the image again**.
 swupdate overwrites completely; there is nothing to repair.
+But first check whether the files are actually unreadable: a slot can also
+carry `clean with errors` as a leftover flag while every file in it is intact
+(item 20). Rewriting does no harm there, but it fixes nothing either.
 
 fsck belongs to the `/data` partition only — see item 6.
 
@@ -363,3 +366,54 @@ grep -rc 'MY-PATCH-MARKER' /opt/victronenergy/dbus-systemcalc-py/   # expected: 
 The same applies to udev rules. A rule you drop in `/etc/udev/rules.d` is gone
 after the next update — put it in `/data/conf/` and have `rc.local` install it,
 or it will come back to bite you as a device that reappears after months.
+
+## 20. The auto-mounted inactive slot is overwritten while it is mounted
+
+Venus auto-mounts the inactive slot read-write at `/run/media/sdaX` (item 12).
+`swupdate` then writes the raw image onto that very partition, underneath the
+old filesystem, which is still mounted. Nothing complains. At the next reboot
+the old mount is torn down and writes its superblock back — onto the new image.
+
+**What we saw on v3.80 (2026-09-22):** the downloaded `.swu` contained a
+`clean` filesystem (`e2fsck -fn` on a copy: no findings). The freshly written
+slot reported `mounting fs with errors` at its **very first** mount, before any
+of our scripts had touched it, and `dumpe2fs` showed `clean with errors` with no
+recorded error event. The old filesystem in that slot had carried the flag since
+earlier updates; tearing down its mount stamped it onto the new image. A
+checksum comparison of all 53 836 files against the official image found no
+differences beyond our own patches — this time it was only the flag.
+
+That it stays harmless is luck, not design. Whatever the old mount still has
+buffered goes to disk at that moment. We suspect this also played a part in
+the half-written slots of item 17, but that is not proven.
+
+**Who keeps it mounted:** `vrmlogger`. When a "storage device" is mounted it
+keeps its backlog database there (`ExternalStorageDir`), open for writing — and
+to Venus the auto-mounted slot looks exactly like a USB stick. As a result
+`mount -o remount,ro` fails with `mount point is busy`, and a plain `umount`
+fails too. `fuser -m /run/media/sdaX` names the process.
+
+**The fix** is in `check-updates-wrapper.sh`, right before swupdate starts:
+
+```sh
+svc -d /service/vrmlogger                 # releases the backlog database
+mount -o remount,ro /run/media/sda3       # flush and freeze
+umount /run/media/sda3                    # now succeeds
+```
+
+The read-only remount comes first on purpose. A lazy `umount -l` of a
+filesystem that is still read-write only detaches it from the tree; the
+superblock stays live and is written back later, which is exactly the problem.
+After `remount,ro` there is nothing left to write back, so a lazy unmount would
+be harmless as a fallback. If `.orig` returns without rebooting (a failed
+download, for example), the wrapper starts `vrmlogger` again.
+
+How to tell that the full unmount really happened: when the slot is mounted
+again, the kernel prints a fresh `EXT4-fs (sda3): mounted filesystem`. After a
+lazy unmount the still-live superblock is reused without that line.
+
+**If a running slot already carries the flag:** it cannot be cleared on a
+mounted root filesystem, and fsck on a slot is off limits anyway (item 1). It
+does no harm in operation; the only thing the kernel refuses is online resizing,
+which is disabled on these images anyway. The flag disappears the next time that
+slot is written, which is two updates later.

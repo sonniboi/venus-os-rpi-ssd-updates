@@ -18,6 +18,7 @@
 #   - sets /data/skip-slot-switch so the Pi reboots into the OLD slot first
 #   - sets /data/.pending-slot-patch so rcS.local runs post-swupdate-patches.sh
 #   - snapshots settings.xml
+#   - unmounts the target slot, which Venus has auto-mounted read-write
 #
 # When setup is needed:
 #   -check                        -> no setup (version query only)
@@ -132,7 +133,59 @@ if [ "$SETUP" = "1" ]; then
     log "mmcblk0 already a symlink -- skipped symlink setup (flags are set)"
   fi
 
+  # 5. Unmount the target slot (see pitfall 20).
+  # Venus auto-mounts the inactive slot read-write at /run/media/sdaX. swupdate
+  # then writes the raw image onto that very device while the old filesystem
+  # is still mounted on top of it. At the next reboot the old mount is torn
+  # down and writes its superblock back -- onto the NEW image. On v3.80 the
+  # downloaded image was "clean", yet the freshly written slot was already
+  # "clean with errors" at its very first mount: the error state of the old
+  # filesystem had been carried over.
+  # Remount read-only first (flushes and freezes; a read-only mount writes
+  # nothing back), then unmount. If it is still busy, -l is safe because the
+  # filesystem is already read-only.
+  RUN_SLOT=$(tr ' ' '\n' < /proc/cmdline | sed -n 's|^root=/dev/||p' | head -n 1)
+  case "$RUN_SLOT" in
+    sda2) TGT_SLOT=sda3 ;;   # ADJUST if your layout differs
+    sda3) TGT_SLOT=sda2 ;;
+    *)    TGT_SLOT="" ;;
+  esac
+  if [ -n "$TGT_SLOT" ]; then
+    # The usual holder is vrmlogger: when a "storage device" is mounted it
+    # keeps its backlog database there (ExternalStorageDir), open for writing.
+    # With it running, remount,ro fails with "busy" and only a lazy unmount
+    # of a still read-write filesystem is left. Stop it for the update.
+    if svstat /service/vrmlogger 2>/dev/null | grep -q ': up'; then
+      svc -d /service/vrmlogger && VRM_STOPPED=1 && sleep 2 && log "vrmlogger stopped (was holding the target slot)"
+    fi
+    for MP in $(awk -v d="/dev/$TGT_SLOT" '$1==d {print $2}' /proc/mounts); do
+      mount -o remount,ro "$MP" 2>/dev/null && log "$MP (/dev/$TGT_SLOT) remounted read-only" \
+        || log "WARN: remount,ro $MP failed"
+      if umount "$MP" 2>/dev/null; then
+        log "$MP unmounted"
+      else
+        log "WARN: $MP busy, held by PID(s): $(fuser -m "$MP" 2>/dev/null)"
+        umount -l "$MP" 2>/dev/null && log "$MP lazily unmounted (was busy)" \
+          || log "WARN: could not unmount $MP"
+      fi
+    done
+    grep -q "^/dev/$TGT_SLOT " /proc/mounts && log "WARN: /dev/$TGT_SLOT is still mounted" \
+      || log "target slot /dev/$TGT_SLOT not mounted -- swupdate writes to a quiet filesystem"
+  else
+    log "WARN: running slot unknown ($RUN_SLOT) -- target slot not unmounted"
+  fi
+
   log "setup complete -- starting check-updates.sh.orig $*"
+fi
+
+if [ "${VRM_STOPPED:-0}" = "1" ]; then
+  # A successful update reboots from inside .orig. We only get here when .orig
+  # returns without rebooting (download or install failure) -- restart vrmlogger.
+  "$ORIG" "$@"
+  RC=$?
+  svc -u /service/vrmlogger
+  log ".orig returned (rc=$RC) -- vrmlogger restarted"
+  exit $RC
 fi
 
 exec "$ORIG" "$@"
