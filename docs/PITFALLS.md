@@ -417,3 +417,70 @@ mounted root filesystem, and fsck on a slot is off limits anyway (item 1). It
 does no harm in operation; the only thing the kernel refuses is online resizing,
 which is disabled on these images anyway. The flag disappears the next time that
 slot is written, which is two updates later.
+
+**Field-confirmed on 2026-09-28 (v3.80 → v3.90-beta1).** First update with the
+fix in place. The wrapper log, in order:
+
+```
+[14:33:59] vrmlogger angehalten (hielt den Ziel-Slot offen)
+[14:33:59] /run/media/sda3 (/dev/sda3) ro remountet
+[14:33:59] /run/media/sda3 ausgehaengt
+[14:33:59] Ziel-Slot /dev/sda3 nicht gemountet — swupdate schreibt auf ein ruhendes Dateisystem
+[14:35:19] .orig beendet (rc=0) — vrmlogger wieder gestartet
+```
+
+(`vrmlogger` stopped, slot remounted read-only, unmounted, swupdate writes to a
+filesystem nobody holds, `vrmlogger` restarted.) The freshly written `sda3`
+reported `Filesystem state: clean`, and the slot that had carried the flag
+(`sda2`, now the rollback slot) reads `clean` as well.
+
+## 21. A GUI overlay can reference a QML type the new release no longer has
+
+This one is not caused by the SSD boot, but it shows up during exactly the kind
+of update this repository makes routine, so it belongs here.
+
+If you customise the classic GUI through an overlay (for example
+`/data/apps/overlay-fs/data/gui/upper/qml/PageSettings.qml`), your copy of the
+file is frozen at the release you took it from. The overlay survives the image
+update — which is the point — but it keeps referencing components by name. When
+a later release removes or renames one of them, the GUI no longer loads:
+
+```
+PageSettings.qml:121:32: PageSettingsWifiWithAccessPoint is not a type
+loading QML files failed
+```
+
+We hit this on the jump to v3.90-beta1: the overlay, taken from an earlier
+build, still instantiated `PageSettingsWifiWithAccessPoint`, which the new
+image does not ship. Everything else on the device kept running; only the local
+GUI (and its VNC view) was dead.
+
+**Fix:** replace the missing type in the overlay file and restart the GUI
+service — no reboot needed:
+
+```sh
+F=/data/apps/overlay-fs/data/gui/upper/qml/PageSettings.qml
+cp "$F" "$F.bak"
+python3 - "$F" <<'PY'
+import sys
+p = sys.argv[1]
+b = open(p, 'rb').read()
+n = b.replace(b'PageSettingsWifiWithAccessPoint {}', b'PageSettingsWifi {}')
+with open(p, 'r+b') as f:        # in place: overlayfs keeps the same inode
+    f.write(n); f.truncate(len(n))
+PY
+svc -t /service/gui
+```
+
+Two details matter. Write the file **in place** rather than with `sed -i`:
+`sed -i` creates a new inode, and the merged overlay view can keep serving the
+old one until the next remount. And work on **bytes**: `truncate(len(text))`
+on a decoded string cuts off the end of any file that contains non-ASCII
+characters, because `len()` counts characters, not bytes.
+
+**Prevention:** after every update, check the GUI log for this pattern before
+you walk away:
+
+```sh
+tail -n 30 /data/log/gui/current | grep -iE 'is not a type|loading qml files failed'
+```

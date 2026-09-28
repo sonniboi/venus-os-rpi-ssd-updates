@@ -11,7 +11,18 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80** (the final release, build 2026-09-21), updated from v3.80~53
+**Large v3.90-beta1** (build 2026-09-25, candidate feed), updated from the
+v3.80 final release through the GUI button on 2026-09-28. This was the first
+update with the target-slot unmount of pitfall 20 in place, and the log shows it
+doing its job: `vrmlogger` stopped, the slot remounted read-only and fully
+unmounted before swupdate started. The download and write took about 80 seconds,
+the slot patcher ran less than a minute after the first reboot, the Pi was back on the
+new slot about two and a half minutes after the button was pressed, and
+`update-postcheck` came back green. This time the freshly written slot came up
+`clean`. The jump to a new minor release did break one local GUI customisation,
+which has nothing to do with the update mechanism itself — see pitfall 21.
+
+The update before that, to **v3.80** (the final release, build 2026-09-21), from v3.80~53
 through the GUI button on 2026-09-22 with the SD card left out: swupdate took
 about a minute, the slot patcher ran 50 seconds after the first reboot, and
 `update-postcheck` came back green. That update also exposed a new problem: the
@@ -95,7 +106,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 20 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 21 failure modes, each one learned the hard way |
 
 ## Requirements
 
