@@ -178,8 +178,20 @@ retry_update_or_die() {
   exit 0
 }
 
+DRY_MOUNTED=0
 if ! mountpoint -q "$NEWSLOT" 2>/dev/null; then
   log "mounting /dev/$TARGET -> $NEWSLOT"
+  # Dry run: mount read-only without journal replay (noload writes nothing) so the
+  # readability check below sees the real slot. Without this, a dry run against an
+  # unmounted slot always reported "would auto-retry" -- even for a clean slot.
+  if [ "$DRY" = "1" ]; then
+    mkdir -p "$NEWSLOT"
+    if mount -o ro,noload /dev/$TARGET "$NEWSLOT" 2>/tmp/mount-err.txt; then
+      DRY_MOUNTED=1
+    else
+      log "DRY-RUN: mount error: $(cat /tmp/mount-err.txt)"
+    fi
+  fi
   [ "$DRY" = "0" ] && {
     mkdir -p "$NEWSLOT"
     if ! mount /dev/$TARGET "$NEWSLOT" 2>/tmp/mount-err.txt; then
@@ -202,7 +214,13 @@ if [ ! -f "$NEWSLOT/opt/victronenergy/version" ]; then
   FS_STATE=$(dumpe2fs -h /dev/$TARGET 2>/dev/null | grep "Filesystem state:" | sed "s/.*state: *//")
   log "$NEWSLOT/opt/victronenergy/version unreadable -- filesystem state: ${FS_STATE:-unknown}"
   if [ "$DRY" = "1" ]; then
-    log "DRY-RUN: would auto-retry the update (slot unreadable)"
+    # same decision as the real run below: retry ONLY when the error flag is set
+    if echo "$FS_STATE" | grep -q "errors"; then
+      log "DRY-RUN: would auto-retry the update (slot unreadable + error flag)"
+    else
+      log "DRY-RUN: would ABORT (slot unreadable, no error flag -- no retry)"
+    fi
+    [ "$DRY_MOUNTED" = "1" ] && umount "$NEWSLOT"
     exit 0
   fi
   echo "$FS_STATE" | grep -q "errors" && retry_update_or_die
@@ -218,12 +236,13 @@ case "$TGT_STATE" in
   *error*) log "WARN: /dev/$TARGET is readable but its filesystem state is: $TGT_STATE (flag only, no retry)" ;;
   *)       log "filesystem state /dev/$TARGET: ${TGT_STATE:-unknown}" ;;
 esac
-rm -f /data/.post-swupdate-retry 2>/dev/null || true
+[ "$DRY" = "0" ] && rm -f /data/.post-swupdate-retry 2>/dev/null   # never in a dry run
 log "target version: $(head -n 1 $NEWSLOT/opt/victronenergy/version) ($(cat $NEWSLOT/etc/venus/image-type 2>/dev/null))"
 
 if [ "$DRY" = "1" ]; then
   log "DRY-RUN: no changes. Would patch: fw_env.config, fstab, zzz-resize, S02zzz-fsck-data, /u-boot/cmdline.txt, SD cmdline.txt"
   log "DRY-RUN: skip flag + reboot skipped"
+  [ "$DRY_MOUNTED" = "1" ] && umount "$NEWSLOT" && log "DRY-RUN: $NEWSLOT unmounted again"
   log "=== end (dry run) ==="
   exit 0
 fi
