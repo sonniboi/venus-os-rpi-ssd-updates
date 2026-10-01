@@ -11,7 +11,15 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.90-beta1** (build 2026-09-25, candidate feed), updated from the
+**Large v3.90-beta4** (build 2026-09-30, candidate feed), updated from
+v3.90-beta1 through the GUI button on 2026-10-01: target slot unmounted before
+swupdate, write finished after about three minutes, slot patcher green, back on
+the new slot (`sda2`) about five minutes after the button was pressed,
+`update-postcheck` green, both slots `clean`. The GUI overlay broke again because
+SetupHelper rewrites it on every version change — pitfall 21 now covers that and
+ships `scripts/gui-overlay-fix.sh`.
+
+Before that, on **Large v3.90-beta1** (build 2026-09-25, candidate feed), updated from the
 v3.80 final release through the GUI button on 2026-09-28. This was the first
 update with the target-slot unmount of pitfall 20 in place, and the log shows it
 doing its job: `vrmlogger` stopped, the slot remounted read-only and fully
@@ -105,6 +113,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/post-swupdate-patches.sh` | Patches the new slot, then switches the boot over |
 | `scripts/fsck-data-init.sh` | Boot-time fsck for `/data` — turns a dead Pi into a 30-second boot |
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
+| `scripts/gui-overlay-fix.sh` | Repairs a GUI overlay that SetupHelper rewrote with a missing QML type (optional, pitfall 21) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
 | `docs/PITFALLS.md` | **Read this.** 21 failure modes, each one learned the hard way |
 
@@ -127,6 +136,8 @@ cp scripts/post-swupdate-patches.sh  /data/etc/
 cp scripts/fsck-data-init.sh         /data/etc/
 # only if you exclude serial devices with ENV{VE_SERVICE}="ignore":
 cp scripts/vedirect-ignore-enforce.sh /data/etc/
+# only if you use SetupHelper together with a GUI overlay (pitfall 21):
+cp scripts/gui-overlay-fix.sh        /data/etc/
 chmod +x /data/etc/*.sh
 
 # 2. Merge the relevant blocks from scripts/rcS.local.example

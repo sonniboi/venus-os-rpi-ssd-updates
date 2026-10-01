@@ -484,3 +484,18 @@ you walk away:
 ```sh
 tail -n 30 /data/log/gui/current | grep -iE 'is not a type|loading qml files failed'
 ```
+
+**It comes back on every update if SetupHelper is installed.** On the next
+update (v3.90-beta1 -> v3.90-beta4, 2026-10-01) the same error was back,
+although the overlay had been fixed. The file's modification time was the
+first boot of the new slot: SetupHelper (v9.3) reinstalls its patches after
+every version change and, in doing so, rewrites the overlay `PageSettings.qml`
+from the image original — which on the Pi contains the missing type. A one-off
+fix therefore only lasts until the next release.
+
+`scripts/gui-overlay-fix.sh` makes it stick: it applies the byte-exact fix above
+only when the type is present, restarts the GUI and logs to
+`/var/log/gui-overlay-fix.log`. Call it from `/data/rc.local` twice, about four
+and ten minutes after boot, because SetupHelper does not finish at a fixed time.
+Verified on the device by restoring the broken file and running the script:
+patched 4362 -> 4347 bytes, `loading QML files succeeded`.
