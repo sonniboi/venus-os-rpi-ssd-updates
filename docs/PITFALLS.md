@@ -499,3 +499,46 @@ only when the type is present, restarts the GUI and logs to
 and ten minutes after boot, because SetupHelper does not finish at a fixed time.
 Verified on the device by restoring the broken file and running the script:
 patched 4362 -> 4347 bytes, `loading QML files succeeded`.
+
+## 22. A downgrade through the GUI button writes an unpatched slot
+
+**Symptom:** After pressing *Install* to go back to an older release, the Pi
+reboots every ~40 seconds. It answers ping for a few seconds per cycle, SSH
+for even less, and it keeps booting the *old* slot.
+
+**What happened here (2026-10-02, v3.90-beta5 -> v3.80):** the GUI button calls
+`check-updates.sh -update` **without** `-force`. The wrapper's pre-check saw
+`available < installed`, decided "no upgrade" and skipped the USB/SSD setup —
+but still handed the call to the stock script. **The stock script installs on
+`-update` even when the version is older.** So v3.80 was written to the
+inactive slot without the slot patcher, and U-Boot's `version` was switched to
+it. A local boot hook then saw "U-Boot wants sda2, cmdline says sda3", tried to
+rewrite `cmdline.txt` on a partition that is mounted read-only, ignored the
+failed `sed`, logged "updated" and rebooted — about two hours of boot loop.
+A watchdog test script with `sleep 30` against `test-timeout = 10` caused
+additional reboots during early boot.
+
+**Fix (in `scripts/check-updates-wrapper.sh`):**
+
+- a manual `-update` to a *different* version, older or newer, gets the full
+  setup, exactly like an upgrade;
+- an `-update` that would run without the setup is **aborted** (exit 1) and
+  never reaches the stock script.
+
+**Lessons for any boot hook you write yourself:**
+
+- Never reboot after a step whose success you did not verify. Check the file
+  after writing it (`grep -q "root=$TARGET " cmdline.txt`).
+- Better still, do not let a boot hook switch slots at all. A slot that was not
+  prepared by the patcher has the wrong `fstab`/`fw_env.config` and would not
+  come up properly anyway. Report the mismatch and leave the decision to a human.
+- A watchdog `test-binary` must finish well inside `test-timeout`. Use a grace
+  period after boot and "failed twice in a row" instead of `sleep`.
+
+**Getting out of the loop:** the boot window is short (ping from ~20 s, SSH from
+~23 s, reboot at ~28 s). A loop on another host that retries SSH every second
+and runs `touch /data/skip-slot-switch` as soon as it gets in is enough; the
+next boot stays on the running slot. Then redo the downgrade properly with
+`-force` (wrapper setup, patcher, switch). Verified on the device the same day:
+v3.80 written, patched and booted cleanly, `update-postcheck` green.
+

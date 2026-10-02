@@ -61,9 +61,12 @@ SETUP=1
 
 if [ "$IS_AUTO" = "1" ] && [ "$SETUP" = "1" ]; then
   AUTO_SETTING=$(dbus -y com.victronenergy.settings /Settings/System/AutoUpdate GetValue 2>/dev/null || echo "")
-  if [ "$AUTO_SETTING" = "0" ]; then
+  # AutoUpdate: 0 = off, 1 = check AND install, 2 = check only (never installs).
+  # Only 1 can lead to a write, so only 1 needs the setup. Setting up for 2 left
+  # stale flags behind every time a new release showed up.
+  if [ "$AUTO_SETTING" != "1" ]; then
     SETUP=0
-    log "auto mode + AutoUpdate=0 -> no setup needed"
+    log "auto mode + AutoUpdate=$AUTO_SETTING (not 1, will not install) -> no setup needed"
   fi
 fi
 
@@ -75,19 +78,32 @@ if [ "$SETUP" = "1" ] && [ "$HAS_FORCE" = "0" ] && [ "$HAS_SWU" = "0" ] && ([ "$
   CHECK_OUT=$("$ORIG" -check 2>&1)
   INSTALLED=$(echo "$CHECK_OUT" | awk '/^installed:/ {print $2}')
   AVAILABLE=$(echo "$CHECK_OUT" | awk '/^available:/ {print $2}')
-  # Only treat it as an upgrade when available is numerically NEWER than
-  # installed (build timestamps, YYYYMMDDHHMMSS). This also protects against
+  # Treat it as an upgrade when available is numerically NEWER than installed
+  # (build timestamps, YYYYMMDDHHMMSS). For -auto this also protects against
   # downgrade feeds (e.g. switching from candidate back to release).
+  # A manual -update (the GUI button) to a DIFFERENT version is a deliberate
+  # downgrade and gets the setup as well -- see pitfall 22.
   # -force bypasses this check.
   UPGRADE=0
   if [ -n "$INSTALLED" ] && [ -n "$AVAILABLE" ]; then
-    if [ "$AVAILABLE" -gt "$INSTALLED" ] 2>/dev/null; then UPGRADE=1; fi
+    if [ "$AVAILABLE" -gt "$INSTALLED" ] 2>/dev/null; then
+      UPGRADE=1
+      log "pre-check: upgrade available (installed=$INSTALLED < available=$AVAILABLE) -> setup"
+    elif [ "$IS_UPDATE" = "1" ] && [ "$AVAILABLE" != "$INSTALLED" ]; then
+      UPGRADE=1
+      log "pre-check: downgrade requested via GUI (installed=$INSTALLED -> available=$AVAILABLE) -> setup"
+    fi
   fi
-  if [ "$UPGRADE" = "1" ]; then
-    log "pre-check: upgrade available (installed=$INSTALLED < available=$AVAILABLE) -> setup"
-  else
+  if [ "$UPGRADE" = "0" ]; then
     SETUP=0
     log "pre-check: no upgrade (installed=$INSTALLED, available=$AVAILABLE) -> no setup"
+    # The stock script installs on -update even when the version is OLDER. Passing
+    # an -update through without the setup writes an unpatched slot and switches
+    # U-Boot to it (pitfall 22). Never do that.
+    if [ "$IS_UPDATE" = "1" ]; then
+      log "ABORT: -update without USB/SSD setup would write an unpatched slot -- not starting the stock script"
+      exit 1
+    fi
   fi
 fi
 
