@@ -11,7 +11,14 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.90-beta4** (build 2026-09-30, candidate feed), updated from
+**Large v3.80** (official release, build 2026-09-21), installed on 2026-10-02 as a
+deliberate **downgrade** from v3.90-beta5 with `-force`: wrapper setup, target slot
+unmounted, slot patcher green, back on the new slot (`sda2`) three minutes after the
+start, `update-postcheck` green. The first attempt through the GUI button ended in a
+boot loop because the wrapper let a downgrade through without its setup — fixed,
+see pitfall 22.
+
+Before that, on **Large v3.90-beta4** (build 2026-09-30, candidate feed), updated from
 v3.90-beta1 through the GUI button on 2026-10-01: target slot unmounted before
 swupdate, write finished after about three minutes, slot patcher green, back on
 the new slot (`sda2`) about five minutes after the button was pressed,
@@ -115,7 +122,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/gui-overlay-fix.sh` | Repairs a GUI overlay that SetupHelper rewrote with a missing QML type (optional, pitfall 21) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 21 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 22 failure modes, each one learned the hard way |
 
 ## Requirements
 
