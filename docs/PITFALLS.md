@@ -495,10 +495,20 @@ fix therefore only lasts until the next release.
 
 `scripts/gui-overlay-fix.sh` makes it stick: it applies the byte-exact fix above
 only when the type is present, restarts the GUI and logs to
-`/var/log/gui-overlay-fix.log`. Call it from `/data/rc.local` twice, about four
-and ten minutes after boot, because SetupHelper does not finish at a fixed time.
-Verified on the device by restoring the broken file and running the script:
-patched 4362 -> 4347 bytes, `loading QML files succeeded`.
+`/var/log/gui-overlay-fix.log`. Verified on the device by restoring the broken
+file and running the script: patched 4362 -> 4347 bytes,
+`loading QML files succeeded`.
+
+**Timing (v3.80 -> v3.81, 2026-10-06, the fourth occurrence):** the first
+version of this fix ran four minutes after boot, so the GUI stayed blank for
+about four minutes on every update. The timestamps of the backup copies the
+script keeps show when SetupHelper really rewrites the file: 37 s after boot
+(file written 19:40:49, boot 19:40:12), and about the same on the two earlier
+updates. Now poll early and quietly instead: every 10 s from 25 s after boot
+(`gui-overlay-fix.sh -q`, which logs only fixes and errors), plus two late
+passes as a safety net. The example call is in the script header. The loop and
+the script were tested separately; the first real boot with the loop is the
+next update.
 
 ## 22. A downgrade through the GUI button writes an unpatched slot
 
@@ -541,4 +551,35 @@ and runs `touch /data/skip-slot-switch` as soon as it gets in is enough; the
 next boot stays on the running slot. Then redo the downgrade properly with
 `-force` (wrapper setup, patcher, switch). Verified on the device the same day:
 v3.80 written, patched and booted cleanly, `update-postcheck` green.
+
+## 23. A download can stall for minutes and still succeed
+
+`swupdate` fetches the image over HTTPS. On the v3.81 update (2026-10-06) the
+connection to the update server was dropped twice, at 76 MB and again at
+168 MB of 322 MB. The log then shows
+
+```
+[download_from_url] : Connection with server interrupted, try RESUME after 76365195
+```
+
+and nothing else for up to about five minutes, before the transfer continues
+with a range request from that offset and finishes. DNS, the server and range
+requests were fine the whole time (a `HEAD` on the image URL returned 200 and a
+ranged `GET` returned 206), and the cause of the drops was not found. The
+command line the stock script builds is `swupdate ... -t 30 -r 3` (30 s timeout,
+three retries), so a third drop could fail the run — it did not.
+
+**What to do:** nothing. Do not kill `swupdate` and do not restart the update
+from another session: an interrupted write leaves a half-written target slot
+and live markers (see pitfall 17 and pitfall 18). Judge by facts rather than by
+silence: the update is stuck only if `swupdate` has been gone for minutes while
+`fw_printenv version` has not changed, or if nothing has changed for more than
+about ten minutes. While waiting, the read-only checks are safe: the last
+`swupdate` log line, `ps | grep swupdate`, and whether the markers are still
+set.
+
+**Watching it:** `tai64nlocal < /var/log/swupdate/current | tail` shows
+`Received : <bytes> / <total>` once a second while data flows. After a RESUME
+the denominator is the remaining size, not the full size (here 246250725 =
+322615920 - 76365195).
 
