@@ -512,9 +512,11 @@ is in the script header.
 rewrote the file at +38 s and the GUI came back up broken at +42 s. The
 10 s loop that started 25 s after boot fixed it at +63 s, so the GUI was blank
 for about 21 s instead of four minutes. The loop in the script header starts at
-once and steps every 5 s, which should shrink that to a few seconds; that
-version has been tested on its own but not yet timed in a real boot. The
-rewrite only happens on an **upgrade**: after a rollback (v3.81 -> v3.80) the
+once and steps every 5 s. **Measured on a second real upgrade the same
+evening (v3.80 -> v3.81, boot 20:58:05):** rewrite at +37 s, fixed at +40 s
+(three seconds later), and the GUI never loaded the broken file: its log shows
+only `loading QML files succeeded`, no "is not a type". The rewrite only
+happens on an **upgrade**: after a rollback (v3.81 -> v3.80) the
 file was left alone and the GUI loaded at once.
 
 ## 22. A downgrade through the GUI button writes an unpatched slot
