@@ -241,6 +241,13 @@ log "target version: $(head -n 1 $NEWSLOT/opt/victronenergy/version) ($(cat $NEW
 
 if [ "$DRY" = "1" ]; then
   log "DRY-RUN: no changes. Would patch: fw_env.config, fstab, zzz-resize, S02zzz-fsck-data, /u-boot/cmdline.txt, SD cmdline.txt"
+  FW_NOW=$(fw_printenv version 2>/dev/null | cut -d= -f2)
+  case "$TARGET" in sda2) FW_WANT=1 ;; sda3) FW_WANT=2 ;; *) FW_WANT="" ;; esac
+  if [ -n "$FW_WANT" ] && [ "$FW_NOW" != "$FW_WANT" ]; then
+    log "DRY-RUN: would align the boot env (version=${FW_NOW:-?} -> $FW_WANT) -- rollback case (--target differs from the env slot)"
+  else
+    log "DRY-RUN: boot env already matches the target (version=${FW_NOW:-?})"
+  fi
   log "DRY-RUN: skip flag + reboot skipped"
   [ "$DRY_MOUNTED" = "1" ] && umount "$NEWSLOT" && log "DRY-RUN: $NEWSLOT unmounted again"
   log "=== end (dry run) ==="
@@ -331,6 +338,21 @@ PYPATCH
 log "cmdline.txt patches OK"
 # Read it back AFTER the remount to ro -- catches a write that went nowhere.
 grep -q "root=/dev/$TARGET" /u-boot/cmdline.txt || die "sda1 cmdline.txt not correct after remount ro"
+
+# --- 6b. boot environment must match the target ------------------------------
+# In an update, swupdate has already flipped "version" (and TARGET was derived from it). In a
+# ROLLBACK with --target the target differs from the slot the environment names. Without this
+# step the environment would still name the slot we are leaving, and the NEXT swupdate would
+# write into the slot that is running. Align it, read it back, abort if that fails.
+# Without --target (normal update) this block does nothing.
+FW_NOW=$(fw_printenv version 2>/dev/null | cut -d= -f2)
+case "$TARGET" in sda2) FW_WANT=1 ;; sda3) FW_WANT=2 ;; *) FW_WANT="" ;; esac
+if [ -n "$FW_WANT" ] && [ "$FW_NOW" != "$FW_WANT" ]; then
+  log "boot env version=${FW_NOW:-?} does not match target $TARGET -- setting version=$FW_WANT"
+  fw_setenv version "$FW_WANT" || die "fw_setenv version $FW_WANT failed"
+  [ "$(fw_printenv version 2>/dev/null | cut -d= -f2)" = "$FW_WANT" ] || die "boot env is not version=$FW_WANT after fw_setenv"
+  log "boot env version=$FW_WANT set and read back"
+fi
 
 # --- 7. release the skip flag and reboot -----------------------------------
 if [ -f /data/skip-slot-switch ]; then

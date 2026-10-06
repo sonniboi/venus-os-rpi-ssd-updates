@@ -11,11 +11,13 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.81** (official release, build 2026-10-05): updated from v3.80 on
-2026-10-06 through the normal update path, unattended. The download was cut twice
-and resumed on its own (pitfall 23), the slot patcher ran green, the Pi was back on
-the new slot about twelve minutes after the start, and the GUI overlay type came
-back for the fourth time and was repaired by the early-polling fix (pitfall 21).
+**Large v3.81** (official release, build 2026-10-05), in both directions on
+2026-10-06: updated from v3.80 through the normal update path (the first time the
+download was cut twice and resumed on its own, pitfall 23), **rolled back** to v3.80
+with the slot patcher in about 40 s (pitfall 24), and updated to v3.81 again in
+about four minutes (download included). The GUI overlay type came back on the
+upgrades and was repaired by the early-polling fix (pitfall 21); a deliberately
+failed download exercised the wrapper's failure path (pitfall 25).
 
 Before that, on **Large v3.80** (official release, build 2026-09-21), installed on 2026-10-02 as a
 deliberate **downgrade** from v3.90-beta5 with `-force`: wrapper setup, target slot
