@@ -11,7 +11,13 @@ nightly auto-update. The Pi writes the image to the correct slot, patches the
 new slot, switches over and reboots into it, unattended.
 
 Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
-**Large v3.80** (official release, build 2026-09-21), installed on 2026-10-02 as a
+**Large v3.81** (official release, build 2026-10-05): updated from v3.80 on
+2026-10-06 through the normal update path, unattended. The download was cut twice
+and resumed on its own (pitfall 23), the slot patcher ran green, the Pi was back on
+the new slot about twelve minutes after the start, and the GUI overlay type came
+back for the fourth time and was repaired by the early-polling fix (pitfall 21).
+
+Before that, on **Large v3.80** (official release, build 2026-09-21), installed on 2026-10-02 as a
 deliberate **downgrade** from v3.90-beta5 with `-force`: wrapper setup, target slot
 unmounted, slot patcher green, back on the new slot (`sda2`) three minutes after the
 start, `update-postcheck` green. The first attempt through the GUI button ended in a

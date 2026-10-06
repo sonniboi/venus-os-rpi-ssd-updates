@@ -8,16 +8,26 @@
 # This script replaces the type byte-exactly with "PageSettingsWifi {}" and restarts the
 # GUI. Idempotent: does nothing when the type is not present.
 #
-# Run it from /data/rc.local a few minutes after boot, e.g.
-#   [ -x /data/etc/gui-overlay-fix.sh ] && (sleep 240; /data/etc/gui-overlay-fix.sh; sleep 360; /data/etc/gui-overlay-fix.sh) &
-# (SetupHelper takes a variable amount of time after boot, hence two passes.)
+# Run it from /data/rc.local. SetupHelper rewrites the file about 37 s after the first boot of
+# a new release (measured three times: file mtime vs. boot time), so poll early and quietly,
+# then keep two late passes as a safety net:
+#   [ -x /data/etc/gui-overlay-fix.sh ] && (sleep 25; n=0; while [ $n -lt 24 ]; do \
+#     /data/etc/gui-overlay-fix.sh -q; n=$((n+1)); sleep 10; done; \
+#     sleep 60; /data/etc/gui-overlay-fix.sh; sleep 360; /data/etc/gui-overlay-fix.sh) &
+# (Before v1.3.0 the example waited four minutes, which left the GUI blank for that long.)
+#
+# Option -q: do not log the "OK" lines (for the polling loop). Fixes and errors are always logged.
+# Test without touching a device:
+#   GUI_OVERLAY_FILE=/tmp/x GUI_OVERLAY_LOG=/tmp/l GUI_OVERLAY_NO_SVC=1 ./gui-overlay-fix.sh
 
-F=/data/apps/overlay-fs/data/gui/upper/qml/PageSettings.qml
-LOG=/var/log/gui-overlay-fix.log
+F=${GUI_OVERLAY_FILE:-/data/apps/overlay-fs/data/gui/upper/qml/PageSettings.qml}
+LOG=${GUI_OVERLAY_LOG:-/var/log/gui-overlay-fix.log}
+QUIET=0; [ "$1" = "-q" ] && QUIET=1
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"; }
+logok() { [ "$QUIET" = "1" ] || log "$*"; }
 
-[ -f "$F" ] || { log "OK: $F missing (no overlay) - nothing to do"; exit 0; }
-grep -q "PageSettingsWifiWithAccessPoint {}" "$F" || { log "OK: overlay without WifiWithAccessPoint"; exit 0; }
+[ -f "$F" ] || { logok "OK: $F missing (no overlay) - nothing to do"; exit 0; }
+grep -q "PageSettingsWifiWithAccessPoint {}" "$F" || { logok "OK: overlay without WifiWithAccessPoint"; exit 0; }
 
 cp -a "$F" "$F.bak-autofix-$(date +%Y%m%d-%H%M%S)"
 python3 - "$F" <<'PY' >> "$LOG" 2>&1
@@ -32,7 +42,7 @@ PY
 if grep -q "PageSettingsWifiWithAccessPoint {}" "$F"; then
   log "ERROR: patch did not apply"; exit 1
 fi
-svc -t /service/gui
+[ -n "$GUI_OVERLAY_NO_SVC" ] || svc -t /service/gui
 log "FIXED: WifiWithAccessPoint replaced, GUI restarted"
 # keep only the three newest automatic backups
 ls -t "$F".bak-autofix-* 2>/dev/null | sed -n '4,$p' | while read -r x; do rm -f "$x"; done
