@@ -197,10 +197,24 @@ fi
 if [ "${VRM_STOPPED:-0}" = "1" ]; then
   # A successful update reboots from inside .orig. We only get here when .orig
   # returns without rebooting (download or install failure) -- restart vrmlogger.
+  FW_BEFORE=$(fw_printenv version 2>/dev/null)
   "$ORIG" "$@"
   RC=$?
   svc -u /service/vrmlogger
   log ".orig returned (rc=$RC) -- vrmlogger restarted"
+  # Failure path. Do NOT trust RC: the stock script returned 0 after swupdate had stopped with
+  # "exitcode 1" (download target unreachable, tested on the device). The boot environment is the
+  # truth: swupdate flips "version" when it has written a slot, so an unchanged value means nothing
+  # was switched and the target slot is unreferenced (a half-written image there is harmless, the
+  # next update overwrites it completely). The two markers would otherwise stay armed until the next
+  # boot. Clear them and, if present, call an optional hook (send a notification, write a log...).
+  # If the environment cannot be read, touch nothing.
+  FW_AFTER=$(fw_printenv version 2>/dev/null)
+  if [ -n "$FW_BEFORE" ] && [ "$FW_AFTER" = "$FW_BEFORE" ]; then
+    rm -f /data/skip-slot-switch /data/.pending-slot-patch
+    log "swupdate ended without switching the slot (rc=$RC, boot env unchanged: $FW_AFTER) -- markers removed"
+    [ -x /data/etc/update-failed-hook.sh ] && /data/etc/update-failed-hook.sh "$RC" >> "$LOGF" 2>&1
+  fi
   exit $RC
 fi
 

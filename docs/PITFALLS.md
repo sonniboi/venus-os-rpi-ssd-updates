@@ -504,11 +504,18 @@ version of this fix ran four minutes after boot, so the GUI stayed blank for
 about four minutes on every update. The timestamps of the backup copies the
 script keeps show when SetupHelper really rewrites the file: 37 s after boot
 (file written 19:40:49, boot 19:40:12), and about the same on the two earlier
-updates. Now poll early and quietly instead: every 10 s from 25 s after boot
-(`gui-overlay-fix.sh -q`, which logs only fixes and errors), plus two late
-passes as a safety net. The example call is in the script header. The loop and
-the script were tested separately; the first real boot with the loop is the
-next update.
+updates. Now poll early and quietly instead (`gui-overlay-fix.sh -q`, which logs
+only fixes and errors), plus two late passes as a safety net. The example call
+is in the script header.
+
+**Field result (v3.80 -> v3.81 again, 2026-10-06, 20:35 boot):** SetupHelper
+rewrote the file at +38 s and the GUI came back up broken at +42 s. The
+10 s loop that started 25 s after boot fixed it at +63 s, so the GUI was blank
+for about 21 s instead of four minutes. The loop in the script header starts at
+once and steps every 5 s, which should shrink that to a few seconds; that
+version has been tested on its own but not yet timed in a real boot. The
+rewrite only happens on an **upgrade**: after a rollback (v3.81 -> v3.80) the
+file was left alone and the GUI loaded at once.
 
 ## 22. A downgrade through the GUI button writes an unpatched slot
 
@@ -582,4 +589,55 @@ set.
 `Received : <bytes> / <total>` once a second while data flows. After a RESUME
 the denominator is the remaining size, not the full size (here 246250725 =
 322615920 - 76365195).
+
+## 24. A rollback must set the boot environment itself
+
+Moving back to the other slot is cheap when the old image is still on the SSD
+and was patched when it was installed: patch `cmdline.txt` for that slot and
+reboot. What `post-swupdate-patches.sh` did **not** do until 2026-10-06 is touch
+the boot environment (`fw_printenv version`). In an update that is
+`swupdate`'s job, and the script even derives its target from the value
+`swupdate` just wrote. In a rollback (`--target`, i.e. a target that differs
+from the slot the environment names) nobody flips it. The system would boot the
+older slot with the environment still naming the slot it had just left. The
+next `swupdate` picks "the other slot" from that value and would write into the
+slot that is **running**.
+
+The script now aligns the environment itself when `--target` differs from it
+(`fw_setenv version 1|2`, read back, abort on failure; the dry run says "would
+align the boot env (version=2 -> 1)"). Normal updates are untouched. Verified
+by a real rollback v3.81 -> v3.80 on 2026-10-06: the environment already read
+`version=1` before the reboot, the Pi was back on the older slot after about
+37 s, the post-update check was green, and the following upgrade wrote the
+other slot as expected.
+
+Do the rollback with the patcher, not by hand:
+
+```sh
+/data/etc/post-swupdate-patches.sh --dry-run --target sda2   # read the plan first
+nohup /data/etc/post-swupdate-patches.sh --target sda2 > /tmp/rollback.log 2>&1 &
+```
+
+Before you do, check that the slot you roll back to is itself patched for the
+SSD (`fstab` without `mmcblk`, `fw_env.config` pointing at `/dev/sda`, the
+resize script not executable); a slot that was installed and patched through
+this chain is.
+
+## 25. The stock update script returns 0 after a failed download
+
+`check-updates.sh` ran `swupdate`, which stopped with `do_swupdate stopped with
+exitcode 1` because the download target was unreachable — and the script
+returned **0**. A wrapper that decides by the exit code would call that a
+success. Decide by the boot environment instead: `swupdate` flips `version`
+when it has written a slot, so an unchanged value after the script returns means
+nothing was switched. The wrapper in this repository does exactly that, clears
+the two armed markers and calls an optional `/data/etc/update-failed-hook.sh`
+(a place for a notification). Tested on the device by pointing the update at a
+port that refuses connections: `check-updates.sh -swu http://127.0.0.1:9/x.swu`
+writes no image, `swupdate` retries for about half a minute, then the failure
+path runs (markers removed, `vrmlogger` back up, boot environment unchanged).
+
+One side effect to know: such a test leaves the test URL in the platform's
+"available build" state until the next check. `check-updates.sh -check`
+refreshes it.
 

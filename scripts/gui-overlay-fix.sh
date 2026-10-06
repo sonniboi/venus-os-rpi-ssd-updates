@@ -8,13 +8,16 @@
 # This script replaces the type byte-exactly with "PageSettingsWifi {}" and restarts the
 # GUI. Idempotent: does nothing when the type is not present.
 #
-# Run it from /data/rc.local. SetupHelper rewrites the file about 37 s after the first boot of
-# a new release (measured three times: file mtime vs. boot time), so poll early and quietly,
-# then keep two late passes as a safety net:
-#   [ -x /data/etc/gui-overlay-fix.sh ] && (sleep 25; n=0; while [ $n -lt 24 ]; do \
-#     /data/etc/gui-overlay-fix.sh -q; n=$((n+1)); sleep 10; done; \
+# Run it from /data/rc.local. SetupHelper rewrites the file about 38 s after the first boot of
+# a new release and then restarts the GUI (file mtime vs. boot time, four times: 37-38 s). Poll from
+# the start and quietly, then keep two late passes as a safety net:
+#   [ -x /data/etc/gui-overlay-fix.sh ] && (n=0; while [ $n -lt 48 ]; do \
+#     /data/etc/gui-overlay-fix.sh -q; n=$((n+1)); sleep 5; done; \
 #     sleep 60; /data/etc/gui-overlay-fix.sh; sleep 360; /data/etc/gui-overlay-fix.sh) &
-# (Before v1.3.0 the example waited four minutes, which left the GUI blank for that long.)
+# Measured on a real upgrade (v3.80 -> v3.81): the first version of this fix (one pass after four
+# minutes) left the GUI blank for ~4 min; a 10 s loop starting 25 s after boot fixed it at +63 s
+# (blank for ~21 s); the loop above starts at once with 5 s steps (tested separately, not yet timed
+# in a real boot).
 #
 # Option -q: do not log the "OK" lines (for the polling loop). Fixes and errors are always logged.
 # Test without touching a device:
