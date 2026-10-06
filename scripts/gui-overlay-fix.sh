@@ -16,8 +16,9 @@
 #     sleep 60; /data/etc/gui-overlay-fix.sh; sleep 360; /data/etc/gui-overlay-fix.sh) &
 # Measured on a real upgrade (v3.80 -> v3.81): the first version of this fix (one pass after four
 # minutes) left the GUI blank for ~4 min; a 10 s loop starting 25 s after boot fixed it at +63 s
-# (blank for ~21 s); the loop above starts at once with 5 s steps (tested separately, not yet timed
-# in a real boot).
+# (blank for ~21 s); the loop above starts at once with 5 s steps. Measured on a second real upgrade:
+# rewrite at +37 s, fixed at +40 s, and the GUI never even loaded the broken file (no "is not a type"
+# line in its log).
 #
 # Option -q: do not log the "OK" lines (for the polling loop). Fixes and errors are always logged.
 # Test without touching a device:

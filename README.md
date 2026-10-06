@@ -15,8 +15,9 @@ Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
 2026-10-06: updated from v3.80 through the normal update path (the first time the
 download was cut twice and resumed on its own, pitfall 23), **rolled back** to v3.80
 with the slot patcher in about 40 s (pitfall 24), and updated to v3.81 again in
-about four minutes (download included). The GUI overlay type came back on the
-upgrades and was repaired by the early-polling fix (pitfall 21); a deliberately
+about four minutes (download included). The cycle was run twice. The GUI overlay
+type came back on every upgrade; the 5 s polling fix repaired it three seconds
+after the rewrite, before the GUI ever loaded the broken file (pitfall 21); a deliberately
 failed download exercised the wrapper's failure path (pitfall 25).
 
 Before that, on **Large v3.80** (official release, build 2026-09-21), installed on 2026-10-02 as a
