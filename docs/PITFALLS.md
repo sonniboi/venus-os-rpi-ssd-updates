@@ -691,6 +691,17 @@ udevadm trigger --subsystem-match=tty
 # affected services
 ```
 
+`remount-rw.sh` also rewrites the `/` line in `/etc/fstab` to `defaults`
+("make the rootfs writable and keep it writable after reboot"), so the slot
+stays writable across reboots. A manual fix therefore holds until the next
+update; the freshly written slot comes up `ro` again, and that first boot is
+where block 0 matters. Do not expect a log line from block 0 on later boots —
+it is a no-op once `/` is rw. Check which state a slot is in:
+
+```sh
+grep -E '^\S+\s+/\s' /etc/fstab    # options field `defaults`: the slot stays writable
+```
+
 Verified on the device on 2026-10-22: after the remount, copying the rules and
 `udevadm trigger`, the symlink was back and the battery services delivered
 values again.
