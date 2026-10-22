@@ -131,7 +131,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/gui-overlay-fix.sh` | Repairs a GUI overlay that SetupHelper rewrote with a missing QML type (optional, pitfall 21) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 22 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 25 failure modes, each one learned the hard way |
 
 ## Requirements
 
