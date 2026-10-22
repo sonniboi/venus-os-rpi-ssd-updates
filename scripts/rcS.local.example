@@ -22,6 +22,17 @@ if mkdir -p "$(dirname "$RCS_LOG")" 2>/dev/null; then
 fi
 echo "=== $(date -u) rcS.local start (slot $(grep -o 'root=/dev/sda[23]' /proc/cmdline)) ==="
 
+# --- 0. make the root filesystem writable ----------------------------------
+# From v3.85 on, Venus OS mounts / read-only. Everything below that writes to
+# the root slot (udev rules, the update wrapper, patches under /opt) would then
+# fail silently. Victron's own remount-rw.sh fixes that. No-op if / is already rw.
+# See PITFALLS.md #26.
+if grep -q " / ext4 ro," /proc/mounts; then
+    /opt/victronenergy/swupdate-scripts/remount-rw.sh \
+        && echo "rootfs remounted rw (was ro)" \
+        || echo "ERROR: remount-rw.sh failed, rootfs stays ro"
+fi
+
 # --- 1. mmcblk0 -> sda symlinks -------------------------------------------
 # swupdate writes to a hardcoded /dev/mmcblk0pX. These symlinks redirect that
 # to the SSD. The guard [ ! -e /dev/mmcblk0 ] means: only when there is no
