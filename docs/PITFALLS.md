@@ -643,3 +643,60 @@ One side effect to know: such a test leaves the test URL in the platform's
 "available build" state until the next check. `check-updates.sh -check`
 refreshes it.
 
+## 26. From v3.85 on, the root filesystem is mounted read-only
+
+The update from v3.81 to v3.85 (official release, build 2026-10-22) went through
+the normal path without a hitch: GUI button, wrapper, `swupdate`, slot patcher,
+slot switch. The new slot booted. Then the battery services came up `up` in
+`svstat` and delivered **no values**.
+
+The cause is new in v3.85: Venus OS now mounts `/` read-only.
+
+```
+$ grep " / " /proc/mounts
+/dev/root / ext4 ro,relatime 0 0
+```
+
+Everything `rcS.local` writes to the root slot at boot then fails, and on a
+headless Pi nobody sees it:
+
+1. Copying the udev rules from `/data/conf/` back into `/etc/udev/rules.d/`
+   (block 2 in `rcS.local.example`) ends in
+   `cp: can't create ...: Read-only file system`. The device symlink for the
+   BMS adapter was missing, so the battery services ran against a port that
+   did not exist.
+2. Installing the update wrapper (block 6) fails the same way.
+   `check-updates.sh.orig` was missing — the **next** update would have run
+   through the stock script, without the SSD setup and without the slot
+   patcher.
+3. A patch under `/opt` (pitfall 19) gave up with "not applicable".
+
+The symptoms look like a driver or a cabling problem, not like a boot script
+that could not write. Read `/data/log/rcS.local.log` first.
+
+**Detect it:** `grep " / " /proc/mounts` — `ro` in the options field.
+
+**Fix:** Victron ships `/opt/victronenergy/swupdate-scripts/remount-rw.sh`,
+which makes `/` writable. Block 0 of `rcS.local.example` calls it before
+anything else, and only when `/` is actually mounted `ro`; on older releases it
+does nothing. On a system that has already booted with the failures above, do it
+by hand:
+
+```sh
+/opt/victronenergy/swupdate-scripts/remount-rw.sh
+cp /data/conf/*.rules /etc/udev/rules.d/
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=tty
+# then reinstall the wrapper (block 6 of rcS.local.example) and restart the
+# affected services
+```
+
+Verified on the device on 2026-10-22: after the remount, copying the rules and
+`udevadm trigger`, the symlink was back and the battery services delivered
+values again.
+
+Remember the order from pitfall 15: the udev rules have to be in place before
+the services that depend on them start. With `/` read-only they never arrive at
+all, so a negative check ("is the excluded device really absent?") and a
+positive one ("is the expected symlink there?") both belong in your post-update
+verification.
