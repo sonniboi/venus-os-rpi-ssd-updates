@@ -165,6 +165,10 @@ chmod +x /data/etc/*.sh
 # 2. Merge the relevant blocks from scripts/rcS.local.example
 #    into your /data/rcS.local (do not blindly overwrite an existing one)
 
+# 2b. From v3.85 on, / is mounted read-only (pitfall 26). Make it writable first;
+#     no-op on older releases.
+grep -q " / ext4 ro," /proc/mounts && /opt/victronenergy/swupdate-scripts/remount-rw.sh
+
 # 3. Install the wrapper once by hand; rcS.local does it on every boot afterwards
 CU=/opt/victronenergy/swupdate-scripts/check-updates.sh
 cp "$CU" "$CU.orig"
@@ -175,6 +179,10 @@ chmod +x "$CU"
 cp /data/etc/fsck-data-init.sh /etc/rcS.d/S02zzz-fsck-data
 chmod +x /etc/rcS.d/S02zzz-fsck-data
 ```
+
+`remount-rw.sh` is Victron's own script. It also rewrites the `/` line in
+`/etc/fstab` to `defaults`, so the slot stays writable until the next update;
+on the freshly written slot, block 0 of `rcS.local.example` takes over.
 
 ### Verify before you trust it
 
