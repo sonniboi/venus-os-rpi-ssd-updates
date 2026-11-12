@@ -272,14 +272,16 @@ by checking the filesystem state at the readability check as well, so a
 **Field-confirmed on 2026-09-12 (v3.80~49 → v3.80~50).** The first swupdate pass
 left the target slot with `Filesystem state: clean with errors`; this time the
 mount itself failed (`Structure needs cleaning`), so the original retry branch
-fired. The log tells the whole story in six lines:
+fired. The log tells the whole story in six lines (messages translated to the
+wording of the published scripts; the installation ran a German-language
+version at the time):
 
 ```
-[12:20:37] Mount-Fehler: mount(2) system call failed: Structure needs cleaning.
+[12:20:37] mount error: mount(2) system call failed: Structure needs cleaning.
 [12:20:37] Filesystem state: clean with errors
-[12:20:37] Auto-Retry: check-updates.sh -update (rewrites /dev/sda3)
-[12:22:38] Target-Version: v3.80~50 (large)
-[12:22:39] === Alle Patches OK ===
+[12:20:37] auto-retry: check-updates.sh -update (rewrites /dev/sda3)
+[12:22:38] target version: v3.80~50 (large)
+[12:22:39] === all patches OK ===
 [12:22:39] Reboot in 3 s in sda3 ...
 ```
 
@@ -419,14 +421,14 @@ which is disabled on these images anyway. The flag disappears the next time that
 slot is written, which is two updates later.
 
 **Field-confirmed on 2026-09-28 (v3.80 → v3.90-beta1).** First update with the
-fix in place. The wrapper log, in order:
+fix in place. The wrapper log, in order (messages translated as above):
 
 ```
-[14:33:59] vrmlogger angehalten (hielt den Ziel-Slot offen)
-[14:33:59] /run/media/sda3 (/dev/sda3) ro remountet
-[14:33:59] /run/media/sda3 ausgehaengt
-[14:33:59] Ziel-Slot /dev/sda3 nicht gemountet — swupdate schreibt auf ein ruhendes Dateisystem
-[14:35:19] .orig beendet (rc=0) — vrmlogger wieder gestartet
+[14:33:59] vrmlogger stopped (was holding the target slot)
+[14:33:59] /run/media/sda3 (/dev/sda3) remounted read-only
+[14:33:59] /run/media/sda3 unmounted
+[14:33:59] target slot /dev/sda3 not mounted -- swupdate writes to a quiet filesystem
+[14:35:19] .orig returned (rc=0) -- vrmlogger restarted
 ```
 
 (`vrmlogger` stopped, slot remounted read-only, unmounted, swupdate writes to a
