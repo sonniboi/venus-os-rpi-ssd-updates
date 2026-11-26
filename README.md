@@ -106,6 +106,7 @@ port closed.
 GUI "Install update"
   └─> check-updates-wrapper.sh            (installed as check-updates.sh)
         ├── refuses to run if a real SD card is present
+        ├── calls update-started-hook.sh (optional, every 10 min)
         ├── creates /dev/mmcblk0* -> /dev/sda* symlinks
         ├── sets skip-slot-switch + .pending-slot-patch
         ├── snapshots settings.xml
@@ -116,11 +117,13 @@ GUI "Install update"
 
 /data/rcS.local sees .pending-slot-patch
   └─> post-swupdate-patches.sh
-        ├── fw_env.config, fstab, zzz-resize, boot fsck  (target slot only)
+        ├── fw_env.config, fstab (sda, / rw), zzz-resize,
+        │   boot fsck                                (target slot only)
         ├── cmdline.txt on sda1 (+ SD card if present)   ← boot switch, LAST
         └─> reboot into the NEW slot
 
 /data/rcS.local in the new slot
+  ├── makes / writable if it is still ro (v3.85+), prefers IPv4 (optional)
   ├── reinstalls the wrapper (the update replaced check-updates.sh)
   ├── restores udev rules from /data/conf/
   └── runs your post-upgrade fix-ups
