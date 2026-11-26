@@ -16,6 +16,13 @@ Verified on a Raspberry Pi 4 with a USB SSD, most recently on Venus OS
 slot switch ran cleanly and the new slot booted. From v3.85 on, Venus OS mounts
 the root filesystem read-only, which made `rcS.local` fail silently on its first
 boot (udev rules, wrapper) until `/` was remounted writable — pitfall 26.
+On 2026-11-26 the whole chain was run again as a forced reinstall of v3.85: the
+slot patcher now sets `/` to `defaults` in the new slot's `fstab`, so the new
+slot booted writable and `rcS.local` restored udev rules and wrapper on the
+first boot (pitfall 26). Our monitoring stayed quiet through both reboots
+(same logic as the new `update-started-hook.sh`, which in our setup is called
+directly from the wrapper). The download was very slow over IPv6
+(pitfall 27).
 
 Before that, on **Large v3.81** (official release, build 2026-10-05), in both directions on
 2026-10-06: updated from v3.80 through the normal update path (the first time the
@@ -137,7 +144,7 @@ wrapping that one file covers every path that can start an update.
 | `scripts/vedirect-ignore-enforce.sh` | Keeps `VE_SERVICE=ignore` devices off the bus after an update (optional) |
 | `scripts/gui-overlay-fix.sh` | Repairs a GUI overlay that SetupHelper rewrote with a missing QML type (optional, pitfall 21) |
 | `scripts/rcS.local.example` | The hooks that tie it together, with the reasoning inline |
-| `docs/PITFALLS.md` | **Read this.** 26 failure modes, each one learned the hard way |
+| `docs/PITFALLS.md` | **Read this.** 27 failure modes, each one learned the hard way |
 
 ## Requirements
 
@@ -181,8 +188,23 @@ chmod +x /etc/rcS.d/S02zzz-fsck-data
 ```
 
 `remount-rw.sh` is Victron's own script. It also rewrites the `/` line in
-`/etc/fstab` to `defaults`, so the slot stays writable until the next update;
-on the freshly written slot, block 0 of `rcS.local.example` takes over.
+`/etc/fstab` to `defaults`, so the slot stays writable until the next update.
+For the freshly written slot, the slot patcher does the same before its first
+boot; block 0 of `rcS.local.example` is the fallback.
+
+### Optional hooks
+
+Both are plain executables in `/data/etc/`. If they are missing, nothing happens;
+if they fail, the update is not affected.
+
+| Hook | Called by the wrapper | Typical use |
+|---|---|---|
+| `update-started-hook.sh` | when a real update starts, then every 10 min while it runs (max. 6×) | pause the ping alarm of your monitoring for the two reboots |
+| `update-failed-hook.sh <rc>` | when `swupdate` returned without switching the slot (pitfall 25) | send a notification |
+
+The start hook cannot run after the reboots, so whatever it sets should expire
+by itself (for example a flag file that the monitoring honours for 30 minutes
+after its last refresh). Then a Pi that does not come back is still reported.
 
 ### Verify before you trust it
 

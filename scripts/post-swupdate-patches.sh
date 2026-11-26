@@ -8,7 +8,7 @@
 #
 # What it patches in / for the target slot:
 #   1. fw_env.config       correct /dev/sda offsets (u-boot environment)
-#   2. fstab               mmcblk0p -> sda
+#   2. fstab               mmcblk0p -> sda, / ro -> defaults (v3.85+)
 #   3. zzz-resize-sdcard   disabled (would try to resize a card that isn't there)
 #   4. S02zzz-fsck-data    boot-time fsck for /data (see fsck-data-init.sh)
 #   5. custom-rc-early.sh  safety net so /data/rcS.local runs in the new slot
@@ -241,6 +241,11 @@ log "target version: $(head -n 1 $NEWSLOT/opt/victronenergy/version) ($(cat $NEW
 
 if [ "$DRY" = "1" ]; then
   log "DRY-RUN: no changes. Would patch: fw_env.config, fstab, zzz-resize, S02zzz-fsck-data, /u-boot/cmdline.txt, SD cmdline.txt"
+  if awk '$2 == "/" && $4 ~ /(^|,)ro($|,)/ { f = 1 } END { exit !f }' "$NEWSLOT/etc/fstab"; then
+    log "DRY-RUN: fstab mounts / read-only -- would set it to defaults (pitfall 26)"
+  else
+    log "DRY-RUN: fstab already mounts / writable"
+  fi
   FW_NOW=$(fw_printenv version 2>/dev/null | cut -d= -f2)
   case "$TARGET" in sda2) FW_WANT=1 ;; sda3) FW_WANT=2 ;; *) FW_WANT="" ;; esac
   if [ -n "$FW_WANT" ] && [ "$FW_NOW" != "$FW_WANT" ]; then
@@ -265,6 +270,22 @@ printf '# Configuration file for fw_(printenv/saveenv) utility.\n\n/dev/sda     
 # --- 2. fstab --------------------------------------------------------------
 log "patching $NEWSLOT/etc/fstab (mmcblk0p -> sda)"
 sed -i 's|/dev/mmcblk0p1|/dev/sda1|g; s|/dev/mmcblk0p4|/dev/sda4|g' "$NEWSLOT/etc/fstab"
+# From v3.85 on the image's fstab mounts / read-only (pitfall 26). Set it to
+# `defaults` here, before the first boot, so the new slot comes up writable and
+# rcS.local can restore udev rules and the wrapper on that very boot. Block 0 of
+# rcS.local.example stays as the second line of defence.
+# `| cat >` mirrors Victron's own remount-rw.sh: BusyBox awk does not report a
+# failed write to stdout, so an empty result would otherwise replace fstab.
+if awk '$2 == "/" && $4 ~ /(^|,)ro($|,)/ { f = 1 } END { exit !f }' "$NEWSLOT/etc/fstab"; then
+  if awk '$2 == "/" { $4 = "defaults" } 1' "$NEWSLOT/etc/fstab" | cat > "$NEWSLOT/etc/fstab.tmp" \
+     && [ -s "$NEWSLOT/etc/fstab.tmp" ] && grep -q '^[^#]*[[:space:]]/[[:space:]]' "$NEWSLOT/etc/fstab.tmp"; then
+    sync && mv "$NEWSLOT/etc/fstab.tmp" "$NEWSLOT/etc/fstab" && sync
+    log "$NEWSLOT/etc/fstab: / changed from ro to defaults (boots writable)"
+  else
+    rm -f "$NEWSLOT/etc/fstab.tmp"
+    log "WARN: could not set / to defaults in $NEWSLOT/etc/fstab -- rcS.local block 0 remounts at boot"
+  fi
+fi
 
 # --- 3. zzz-resize-sdcard --------------------------------------------------
 if [ -f "$NEWSLOT/etc/init.d/zzz-resize-sdcard" ]; then

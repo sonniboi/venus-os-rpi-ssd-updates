@@ -28,9 +28,27 @@ echo "=== $(date -u) rcS.local start (slot $(grep -o 'root=/dev/sda[23]' /proc/c
 # fail silently. Victron's own remount-rw.sh fixes that. No-op if / is already rw.
 # See PITFALLS.md #26.
 if grep -q " / ext4 ro," /proc/mounts; then
-    /opt/victronenergy/swupdate-scripts/remount-rw.sh \
-        && echo "rootfs remounted rw (was ro)" \
-        || echo "ERROR: remount-rw.sh failed, rootfs stays ro"
+    if /opt/victronenergy/swupdate-scripts/remount-rw.sh; then
+        echo "rootfs remounted rw (was ro)"
+    else
+        # remount-rw.sh also edits fstab; if that part fails, a plain remount
+        # still makes this boot work. The slot patcher sets fstab before the
+        # first boot anyway, so this branch should stay unused.
+        mount -o remount,rw / \
+            && echo "rootfs remounted rw with mount -o remount,rw (fallback)" \
+            || echo "ERROR: rootfs stays ro -- udev rules and wrapper will fail (pitfall 26)"
+    fi
+fi
+
+# --- 0b. prefer IPv4 for downloads (optional) ------------------------------
+# On our connection the update server delivered the image at 0.22 MB/s over
+# IPv6 and 6.8 MB/s over IPv4 (pitfall 27). swupdate uses whatever getaddrinfo
+# returns first. This only changes the order; IPv6 keeps working. /etc belongs
+# to the root slot, so it has to be set again on every boot. Skip this block if
+# your IPv6 path is fast.
+if ! grep -q '^precedence ::ffff:0:0/96' /etc/gai.conf 2>/dev/null; then
+    printf '# prefer IPv4 (set by /data/rcS.local, pitfall 27)\nprecedence ::ffff:0:0/96  100\n' >> /etc/gai.conf \
+        && echo "gai.conf: IPv4 preferred" || echo "ERROR: gai.conf not writable"
 fi
 
 # --- 1. mmcblk0 -> sda symlinks -------------------------------------------
