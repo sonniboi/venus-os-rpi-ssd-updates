@@ -708,8 +708,56 @@ Verified on the device on 2026-10-22: after the remount, copying the rules and
 `udevadm trigger`, the symlink was back and the battery services delivered
 values again.
 
+**Since 2026-11-26 the slot patcher fixes this before the first boot.** After
+the `mmcblk0p` → `sda` edit it sets the options field of the `/` line in the new
+slot's `fstab` from `ro` to `defaults`, in the same way `remount-rw.sh` does
+(write to a temporary file, check that it is not empty and still has a `/` line,
+then move it into place). The new slot then boots writable, and block 0 of
+`rcS.local.example` becomes the fallback; if `remount-rw.sh` itself fails, block
+0 now falls back to a plain `mount -o remount,rw /`. Verified on the device on
+2026-11-26 with a forced reinstall of v3.85: the patcher logged
+`fstab: / changed from ro to defaults`, the new slot came up with `/` mounted
+`rw`, and `rcS.local` restored the udev rules and the wrapper on that first boot.
+
 Remember the order from pitfall 15: the udev rules have to be in place before
 the services that depend on them start. With `/` read-only they never arrive at
 all, so a negative check ("is the excluded device really absent?") and a
 positive one ("is the expected symlink there?") both belong in your post-update
 verification.
+
+## 27. The image download can be twenty times slower over IPv6
+
+On the forced reinstall of v3.85 (2026-11-26) the download ran at about
+0.22 MB/s. At that rate the 323 MB Large image takes two to three hours, and the
+Pi sits in the middle of an update the whole time. `swupdate` had picked the
+update server's IPv6 address. Measured from the Pi with `curl` against the image
+URL right afterwards:
+
+| Path | Rate |
+|---|---|
+| update server over IPv6 | 0.22 MB/s |
+| update server over IPv4 | 4 to 6.8 MB/s |
+| an unrelated server over IPv6, same line | 4.9 MB/s |
+
+So the line was fine; the IPv6 path to the update server was not. Whether that
+is permanent, or specific to one provider, is not known. The run itself still
+finished: the connection dropped, `swupdate` resumed (pitfall 23), and the
+resumed transfer was fast.
+
+**Detect it:** watch `Received : <bytes> / <total>` in
+`tai64nlocal < /var/log/swupdate/current` (pitfall 23) for a minute, or time a
+ranged download of the image URL with `curl -4` and `curl -6`.
+
+**Fix:** prefer IPv4 in `getaddrinfo` by adding
+
+```
+precedence ::ffff:0:0/96  100
+```
+
+to `/etc/gai.conf`. This only changes the order of the returned addresses; IPv6
+keeps working. `/etc` belongs to the root slot, so set it from `rcS.local` on
+every boot (block 0b of `rcS.local.example`). Not yet confirmed by a full update
+run with the setting in place; the next official release will tell.
+
+Do not "fix" a slow download by killing `swupdate` and starting again — see
+pitfalls 17, 18 and 23.

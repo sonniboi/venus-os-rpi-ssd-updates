@@ -121,6 +121,34 @@ if [ "$SETUP" = "1" ]; then
     exit 1
   fi
 
+  # 0b. Optional hook: tell your monitoring that an update is starting.
+  # The Pi goes offline twice during an update (reboot into the old slot, then
+  # into the new one). If something pings it, give it a way to stay quiet:
+  # /data/etc/update-started-hook.sh is called now and every 10 minutes while
+  # this wrapper or swupdate is still running (at most 6 times, for slow
+  # downloads). It cannot run after the reboots, so whatever it sets on the
+  # monitoring side should expire by itself (we use a flag file that is valid
+  # for 30 minutes after its last refresh). A failing hook never stops the update.
+  HOOK_START=/data/etc/update-started-hook.sh
+  if [ -x "$HOOK_START" ]; then
+    if "$HOOK_START" </dev/null >> "$LOGF" 2>&1; then
+      log "update-started hook OK"
+    else
+      log "WARN: update-started hook failed -- update continues"
+    fi
+    # $$ stays the wrapper's PID inside the subshell and survives the exec into
+    # .orig below. (pgrep -f on the script name also matches unrelated shells
+    # whose command line contains it -- hence the PID.)
+    MAIN_PID=$$
+    ( n=0
+      while [ "$n" -lt "${HOOK_START_REPEAT:-6}" ]; do
+        sleep "${HOOK_START_INTERVAL:-600}"
+        kill -0 "$MAIN_PID" 2>/dev/null || pgrep -x swupdate >/dev/null 2>&1 || break
+        "$HOOK_START" </dev/null >/dev/null 2>&1
+        n=$((n + 1))
+      done ) </dev/null >/dev/null 2>&1 &
+  fi
+
   # 1. Skip flag: makes the Pi reboot into the OLD (still working) slot after
   # swupdate. Without it the Pi tries to boot a slot whose cmdline.txt, fstab
   # and fw_env.config have not been patched yet -> boot loop, no network.
